@@ -1,0 +1,66 @@
+/* ==============================================
+   map.css — Leaflet map container and the
+   floating control overlay pinned to its corner
+   ============================================== */
+
+/* Map wrapper takes all horizontal space not claimed by the agent sidebar.
+   position:relative is the anchor for the absolutely-positioned overlay. */
+#map-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* Dash renders dl.Map as a div with id="agent-map"; Leaflet adds its own
+   inner container. Both need 100% to fill the wrapper. */
+#agent-map,
+#agent-map .leaflet-container {
+    width: 100%;
+    height: 100%;
+}
+
+/* Floating control panel: sits above the tile layer (z-index 1000).
+   Width is set to 160px — enough for the "Center Map" label and a numeric input. */
+.map-overlay {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 160px;
+    background-color: rgba(255, 255, 255, 0.95);
+    padding: 8px;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+}
+
+/* "Center Map" reuses btn-global but needs to fill the overlay width */
+.map-overlay .btn-global {
+    width: 100%;
+    margin-right: 0;
+    margin-bottom: 8px;
+}
+
+/* Goto Height label + input stacked vertically */
+.goto-height-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    margin-bottom: 6px;
+}
+
+.goto-height-label {
+    font-size: 12px;
+    margin-bottom: 2px;
+}
+
+#goto-height {
+    width: 100%;
+    height: 36px;
+    font-size: 14px;
+    box-sizing: border-box;
+}

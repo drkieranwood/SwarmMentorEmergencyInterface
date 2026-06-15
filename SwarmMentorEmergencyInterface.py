@@ -560,18 +560,6 @@ class DroneFleetManager:
 # -----------------------------
 # Shared styles & Fleet Init
 # -----------------------------
-BTN_STYLE = {
-    'height': '40px',
-    'padding': '0 16px',
-    'fontWeight': 'bold',
-    'borderRadius': '8px',
-    'border': '1px solid #ccc',
-    'backgroundColor': '#f7f7f7',
-    'fontFamily': "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
-    'cursor': 'pointer',
-    'transition': 'all 0.2s ease',
-}
-
 ulog = ULogWriter('logs/' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.log')
 receiver = DroneFleetManager(drone_list_path=DRONE_LIST_FILE)
 
@@ -610,85 +598,62 @@ def calculate_zoom_from_bounds(latitudes, longitudes):
         if max_span <= span_limit: return zoom
     return 8
 
-def vertical_divider(height='6vh', extra_class=''):
-    return html.Div(className=('agent-div ' + extra_class).strip(), style={'width': '1px', 'height': height, 'backgroundColor': '#999', 'margin': '0 5px', 'flexShrink': 0})
+def vertical_divider(extra_class=''):
+    return html.Div(className=('agent-div ' + extra_class).strip())
 
 def status_square(is_on, label):
-    return html.Div(title=label, style={'width': 'clamp(8px, 1vw, 14px)', 'height': 'clamp(8px, 1vw, 14px)', 'backgroundColor': '#4CAF50' if is_on else '#F44336', 'border': '1px solid #333', 'borderRadius': '50%', 'boxShadow': '0 1px 2px rgba(0,0,0,0.2)'})
+    return html.Div(title=label, className='status-dot ' + ('dot-on' if is_on else 'dot-off'))
 
 def status_indicator(is_on, label):
-    return html.Div([status_square(is_on, label), html.Span(label, style={'fontSize': 'clamp(10px, 1vw, 12px)', 'marginLeft': '5px', 'whiteSpace': 'nowrap'})], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '0.3vh'})
-
-BUTTON_MIN_WIDTH = 50
-NUM_COLS = 3
-COLUMN_MIN_WIDTH = BUTTON_MIN_WIDTH * NUM_COLS
-button_style = {'width': '100%', 'height': '100%', 'fontSize': 'clamp(10px,1vw,14px)', 'borderRadius': '4px'}
+    return html.Div([status_square(is_on, label), html.Span(label, className='status-label')], className='status-indicator')
 
 def create_agent_bar(agent_id, ip, name, online, retrying, last_seen, gps, batt, mode, last_error):
-    divider_height = '6vh'
     status_text = 'ONLINE' if online else 'OFFLINE'
     age_text = 'fresh' if not last_seen else f"{time.time() - last_seen:.1f}s ago"
-    drone_label = name
 
     return html.Div(
-        # FIX: The pattern ID is now on the card itself so it styles the correct DOM element
         id={'type': 'agent-row-style', 'index': agent_id},
+        className='drone-row offline',
         children=[
             html.Div([
-                html.Div(f"Drone {drone_label}", style={'fontWeight': 'bold','fontSize': 'clamp(12px, 1.5vw, 18px)','lineHeight':'1.1','fontFamily':'monospace'}),
-                html.Div(f"IP: {ip}", style={'fontSize': 'clamp(10px, 1vw, 14px)'}),
-                html.Div(f"State: {status_text}", id={'type': 'agent-state-txt', 'index': agent_id}, style={'fontSize': 'clamp(10px, 1vw, 14px)'}),
-                html.Div(f"Last seen: {age_text}", id={'type': 'agent-age-txt', 'index': agent_id}, style={'fontSize': 'clamp(10px, 1vw, 14px)'}),
-                html.Div(f"Mode: {mode}", id={'type': 'agent-mode-txt', 'index': agent_id}, style={'fontSize': 'clamp(10px, 1vw, 14px)'})
-            ], className='agent-col agent-col-identity', style={'display': 'flex','flexDirection':'column','justifyContent':'center','flex':'0 0 auto'}),
-            vertical_divider(divider_height, 'agent-div-before-status'),
+                html.Div(f"Drone {name}", className='drone-label'),
+                html.Div(f"IP: {ip}", className='drone-meta'),
+                html.Div(f"State: {status_text}", id={'type': 'agent-state-txt', 'index': agent_id}, className='drone-meta'),
+                html.Div(f"Last seen: {age_text}", id={'type': 'agent-age-txt', 'index': agent_id}, className='drone-meta'),
+                html.Div(f"Mode: {mode}", id={'type': 'agent-mode-txt', 'index': agent_id}, className='drone-meta')
+            ], className='agent-col agent-col-identity'),
+            vertical_divider('agent-div-before-status'),
             html.Div([
                 html.Div([
                     html.Div(id={'type': 'agent-airborne-dot', 'index': agent_id}, title="Airborne",
-                             style={'width': 'clamp(8px, 1vw, 14px)', 'height': 'clamp(8px, 1vw, 14px)',
-                                    'backgroundColor': '#F44336', 'border': '1px solid #333',
-                                    'borderRadius': '50%', 'boxShadow': '0 1px 2px rgba(0,0,0,0.2)'}),
-                    html.Span("Airborne", style={'fontSize': 'clamp(10px, 1vw, 12px)', 'marginLeft': '5px', 'whiteSpace': 'nowrap'})
-                ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '0.3vh'}),
+                             className='status-dot grounded'),
+                    html.Span("Airborne", className='status-label')
+                ], className='status-indicator'),
                 status_indicator(not retrying, "Retry OK"),
                 status_indicator(last_error == "", "Healthy"),
-                html.Div(last_error if last_error else "", style={'fontSize': 'clamp(9px, 0.9vw, 11px)', 'color': '#333', 'maxWidth': '110px', 'overflow': 'hidden', 'textOverflow': 'ellipsis', 'whiteSpace': 'nowrap'})
-            ], className='agent-col agent-col-status', style={'display':'flex','flexDirection':'column','justifyContent':'center','alignItems':'flex-start','flex':'0 0 auto'}),
-            vertical_divider(divider_height, 'agent-div-before-telemetry'),
+                html.Div(last_error if last_error else "", className='drone-error')
+            ], className='agent-col agent-col-status'),
+            vertical_divider('agent-div-before-telemetry'),
             html.Div([
-                html.Div(f"Batt: {batt:.1f}%" if isinstance(batt, (int, float)) else f"Batt: {batt}", id={'type': 'agent-batt-txt', 'index': agent_id}, style={'fontSize':'clamp(10px,1vw,14px)'}),
-                html.Div(f"Lat: {gps[0]:.6f}", id={'type': 'agent-lat-txt', 'index': agent_id}, style={'fontSize':'clamp(10px,1vw,14px)'}),
-                html.Div(f"Lon: {gps[1]:.6f}", id={'type': 'agent-lon-txt', 'index': agent_id}, style={'fontSize':'clamp(10px,1vw,14px)'}),
-                html.Div(f"Alt: {gps[2]:.1f}", id={'type': 'agent-alt-txt', 'index': agent_id}, style={'fontSize':'clamp(10px,1vw,14px)'})
-            ], className='agent-col agent-col-telemetry', style={'display':'flex','flexDirection':'column','justifyContent':'center','flex':'0 0 auto'}),
-            vertical_divider(divider_height, 'agent-div-before-buttons'),
+                html.Div(f"Batt: {batt:.1f}%" if isinstance(batt, (int, float)) else f"Batt: {batt}", id={'type': 'agent-batt-txt', 'index': agent_id}, className='drone-telem'),
+                html.Div(f"Lat: {gps[0]:.6f}", id={'type': 'agent-lat-txt', 'index': agent_id}, className='drone-telem'),
+                html.Div(f"Lon: {gps[1]:.6f}", id={'type': 'agent-lon-txt', 'index': agent_id}, className='drone-telem'),
+                html.Div(f"Alt: {gps[2]:.1f}", id={'type': 'agent-alt-txt', 'index': agent_id}, className='drone-telem')
+            ], className='agent-col agent-col-telemetry'),
+            vertical_divider('agent-div-before-buttons'),
             html.Div(
                 html.Div([
-                    html.Button("Takeoff", id={'type':'agent-btn','index':f'{agent_id}-takeoff'}, type="button", n_clicks=0, style=button_style),
-                    html.Button("Hold", id={'type':'agent-btn','index':f'{agent_id}-hold'}, type="button", n_clicks=0, style=button_style),
-                    html.Button("Goto", id={'type':'agent-btn','index':f'{agent_id}-goto'}, type="button", n_clicks=0, style={**button_style, "backgroundColor": "#d9e8ff"}),
-                    html.Button("Land", id={'type':'agent-btn','index':f'{agent_id}-land'}, type="button", n_clicks=0, style=button_style),
-                    html.Button("RTL", id={'type':'agent-btn','index':f'{agent_id}-rtl'}, type="button", n_clicks=0, style=button_style),
-                    html.Button("Return CTL", id={'type':'agent-btn','index':f'{agent_id}-release'}, type="button", n_clicks=0, style={**button_style, "backgroundColor": "#fff0f0", "color": "#a00000"}),
-                ], className='agent-btn-grid', style={'display': 'grid', 'gridTemplateColumns': f'repeat({NUM_COLS}, 1fr)', 'gridTemplateRows': 'repeat(2, 1fr)', 'gap': '4px', 'flex': '1'}),
+                    html.Button("Takeoff",    id={'type':'agent-btn','index':f'{agent_id}-takeoff'},  type="button", n_clicks=0, className='drone-btn'),
+                    html.Button("Hold",       id={'type':'agent-btn','index':f'{agent_id}-hold'},     type="button", n_clicks=0, className='drone-btn'),
+                    html.Button("Goto",       id={'type':'agent-btn','index':f'{agent_id}-goto'},     type="button", n_clicks=0, className='drone-btn drone-btn-goto'),
+                    html.Button("Land",       id={'type':'agent-btn','index':f'{agent_id}-land'},     type="button", n_clicks=0, className='drone-btn'),
+                    html.Button("RTL",        id={'type':'agent-btn','index':f'{agent_id}-rtl'},      type="button", n_clicks=0, className='drone-btn'),
+                    html.Button("Return CTL", id={'type':'agent-btn','index':f'{agent_id}-release'},  type="button", n_clicks=0, className='drone-btn drone-btn-release'),
+                ], className='agent-btn-grid'),
                 className='agent-col agent-col-buttons',
-                style={'display': 'flex', 'flexDirection': 'column', 'flex': '0 0 auto', 'height': '100%'}
             ),
-            vertical_divider(divider_height, 'agent-div-trailing')
+            vertical_divider('agent-div-trailing')
         ],
-        style={
-            'display': 'flex',
-            'alignItems': 'stretch',
-            'height': 'calc(5.5 * clamp(12px, 1vw, 14px) + 2 * 0.5vh + 16px)',
-            'border': '1px solid #ddd',
-            'borderRadius': '12px',
-            'padding': '8px',
-            'margin': '0.5vh 0',
-            'backgroundColor': '#f0f0f0',
-            'color': '#aaaaaa',
-            'boxShadow': '0 2px 5px rgba(0,0,0,0.1)',
-            'transition': 'all 0.2s ease'
-        }
     )
 
 
@@ -696,8 +661,7 @@ def create_agent_bar(agent_id, ip, name, online, retrying, last_seen, gps, batt,
 # Dash App Framework Initialisation
 # -----------------------------
 app = dash.Dash(__name__, update_title=None)
-app.index_string = '''
-<!DOCTYPE html>
+app.index_string = '''<!DOCTYPE html>
 <html>
     <head>
         {%metas%}
@@ -705,29 +669,6 @@ app.index_string = '''
         <title>{%title%}</title>
         {%favicon%}
         {%css%}
-        <style>
-            button:hover {
-                background-color: #e0e0e0;
-                transform: scale(1.03);
-                transition: all 0.2s ease;
-            }
-            .agent-mini:hover {
-                box-shadow: 0 3px 8px rgba(0,0,0,0.15);
-                background-color: rgba(230,230,255,0.3);
-            }
-            ::-webkit-scrollbar {
-                width: 8px;
-                height: 8px;
-            }
-            ::-webkit-scrollbar-thumb {
-                background: rgba(0,0,0,0.2);
-                border-radius: 4px;
-            }
-            body {
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                margin: 0;
-            }
-        </style>
     </head>
     <body>
         {%app_entry%}
@@ -737,8 +678,7 @@ app.index_string = '''
             {%renderer%}
         </footer>
     </body>
-</html>
-'''
+</html>'''
 
 server = app.server
 @server.route("/tiles/<path:path>")
@@ -747,33 +687,16 @@ def serve_tiles(path):
 
 
 app.layout = html.Div([
-    # COMPACTED TITLE: Reduced text size, stripped heavy margins
-    html.H1("FlightBoard Dashboard", style={
-        'fontFamily': "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif", 
-        'fontWeight': '600', 
-        'fontSize': 'clamp(16px, 1.8vw, 22px)', 
-        'margin': '0 0 4px 0',
-        'lineHeight': '1.1'
-    }),
-    # COMPACTED STATUS WINDOW: Trimmed padding and bottom margin down
-    html.Div(id="button-output", style={
-        'width': '100%', 
-        'padding': '6px 12px', 
-        'backgroundColor': '#f9f9f9', 
-        'border': '1px solid #ddd', 
-        'marginBottom': '6px', 
-        'fontSize': '13px', 
-        'borderRadius': '6px',
-        'boxSizing': 'border-box'
-    }),
+    html.H1("FlightBoard Dashboard", className='dashboard-title'),
+    html.Div(id="button-output"),
     html.Div([
-        html.Button("TAKEOFF ALL", id="takeoff-all", n_clicks=0, style={**BTN_STYLE, 'marginRight': '6px'}),
-        html.Button("HOLD ALL", id="hold-all", n_clicks=0, style={**BTN_STYLE, 'marginRight': '6px'}),
-        html.Button("LAND ALL", id="land-all", n_clicks=0, style={**BTN_STYLE, 'marginRight': '6px'}),
-        html.Button("RTL ALL", id="rtl-all", n_clicks=0, style={**BTN_STYLE, 'marginRight': '6px'}),
+        html.Button("TAKEOFF ALL", id="takeoff-all", n_clicks=0, className='btn-global'),
+        html.Button("HOLD ALL", id="hold-all", n_clicks=0, className='btn-global'),
+        html.Button("LAND ALL", id="land-all", n_clicks=0, className='btn-global'),
+        html.Button("RTL ALL", id="rtl-all", n_clicks=0, className='btn-global'),
         dcc.ConfirmDialog(id='confirm-land-all', message='Are you sure you want to LAND ALL drones?'),
         dcc.ConfirmDialog(id='confirm-rtl-all', message='Are you sure you want to RTL ALL drones?'),
-    ], style={'marginBottom': '20px', 'display': 'flex', 'alignItems': 'stretch'}),
+    ], className='global-actions'),
 
     html.Div([
         html.Div(children=[
@@ -785,29 +708,27 @@ app.layout = html.Div([
                 maxZoom=22,
                 doubleClickZoom=False,
                 children=[
-                    dl.TileLayer(url="/tiles/nenana/{z}/{x}/{y}.jpg", tms=False, noWrap=True, minZoom=1, maxZoom=22),
+                    dl.TileLayer(url="/tiles/FairbanksTestSite/{z}/{x}/{y}.jpg", tms=False, noWrap=True, minZoom=1, maxZoom=22),
                     dl.LayerGroup(id='layer-rtl-targets'),
                     dl.LayerGroup(id='layer-targets'),
                     dl.LayerGroup(id='map-markers'),
                     dl.LayerGroup(id='layer-custom'),
                 ],
-                style={'width': '100%', 'height': '100%'}
             ),
             html.Div(children=[
-                html.Button("Center Map", id="map-center", n_clicks=0, style={**BTN_STYLE, 'width': '100%', 'marginBottom': '8px'}),
+                html.Button("Center Map", id="map-center", n_clicks=0, className='btn-global'),
                 html.Div([
-                    html.Div("Goto Height (m)", style={'fontSize': '12px', 'marginBottom': '2px', 'textAlign': 'left'}),
-                    dcc.Input(id='goto-height', type='number', placeholder='50', value=defaults_data.get("goto_height", 50), style={'width': '100%', 'height': '36px', 'fontSize': '14px', 'boxSizing': 'border-box'})
-                ], style={'display': 'flex', 'flexDirection': 'column', 'alignItems': 'stretch', 'marginBottom': '6px'})
-            ], style={'position': 'absolute', 'top': '10px', 'right': '10px', 'width': '160px', 'backgroundColor': 'rgba(255, 255, 255, 0.95)', 'padding': '8px', 'borderRadius': '8px', 'boxShadow': '0 2px 6px rgba(0,0,0,0.2)', 'zIndex': 1000, 'display': 'flex', 'flexDirection': 'column', 'alignItems': 'stretch'})
-        ], id='map-container', style={'position': 'relative', 'width': '100%', 'height': '100%', 'flex': '1 1 auto', 'minHeight': '0'}),
+                    html.Div("Goto Height (m)", className='goto-height-label'),
+                    dcc.Input(id='goto-height', type='number', placeholder='50', value=defaults_data.get("goto_height", 50))
+                ], className='goto-height-wrap')
+            ], className='map-overlay')
+        ], id='map-container'),
 
         html.Div([
             html.Button("⯈", id="toggle-agents", className="toggle-btn"),
             html.Div(
-                id='agent-container', 
+                id='agent-container',
                 children=[
-                    # Clean outer holder div with flat IDs to prevent border mirroring shadows
                     html.Div(
                         create_agent_bar(
                             agent_id=entry["sysid"],
@@ -823,11 +744,10 @@ app.layout = html.Div([
                         ),
                         id=f"agent-row-wrapper-{entry['sysid']}"
                     ) for entry in load_drone_ip_list(DRONE_LIST_FILE)
-                ], 
-                style={'height': '100%', 'overflowY': 'auto', 'overflowX': 'hidden', 'display': 'flex', 'flexDirection': 'column'}
+                ],
             )
         ], id='agents-bar', className='collapsed')
-    ], style={'position': 'relative', 'flex': '1', 'minHeight': '0', 'width': '100%', 'display': 'flex', 'flexDirection': 'row'}),
+    ], className='content-row'),
 
     dcc.Interval(id='interval-agents', interval=500, n_intervals=0),
     dcc.Interval(id='interval-map', interval=250, n_intervals=0),
@@ -838,7 +758,7 @@ app.layout = html.Div([
     html.Div(id='map-click-left-output', style={'display': 'none'}),
     html.Div(id='map-click-right-output', style={'display': 'none'}),
     html.Div(id='map-click-dleft-output', style={'display': 'none'}),
-], style={'height': '100vh', 'width': '100vw', 'display': 'flex', 'flexDirection': 'column', 'overflow': 'hidden', 'boxSizing': 'border-box', 'padding': '12px', 'gap': '12px'})
+], className='main-layout')
 
 
 # -----------------------------
@@ -914,7 +834,7 @@ def center_map_on_agents(n_clicks):
     }
 
 @app.callback(
-    Output({'type': 'agent-row-style', 'index': ALL}, 'style'),
+    Output({'type': 'agent-row-style', 'index': ALL}, 'className'),
     Output({'type': 'agent-state-txt', 'index': ALL}, 'children'),
     Output({'type': 'agent-age-txt', 'index': ALL}, 'children'),
     Output({'type': 'agent-mode-txt', 'index': ALL}, 'children'),
@@ -922,12 +842,12 @@ def center_map_on_agents(n_clicks):
     Output({'type': 'agent-lat-txt', 'index': ALL}, 'children'),
     Output({'type': 'agent-lon-txt', 'index': ALL}, 'children'),
     Output({'type': 'agent-alt-txt', 'index': ALL}, 'children'),
-    Output({'type': 'agent-airborne-dot', 'index': ALL}, 'style'),
+    Output({'type': 'agent-airborne-dot', 'index': ALL}, 'className'),
     Input('interval-agents', 'n_intervals'),
     State({'type': 'agent-state-txt', 'index': ALL}, 'id')
 )
 def update_dashboard(n, dynamic_ids):
-    row_styles = []
+    row_classes = []
     states, ages, modes, batts, lats, lons, alts, airborne_dots = [], [], [], [], [], [], [], []
 
     with receiver.lock:
@@ -945,23 +865,17 @@ def update_dashboard(n, dynamic_ids):
 
             stale = online and (last_seen == 0 or time.time() - last_seen > 20)
             if not online:
-                bg_color, text_color = '#f0f0f0', '#aaaaaa'
+                state_class = 'offline'
             elif stale:
-                bg_color, text_color = '#d4eaf4', '#000000'
+                state_class = 'online stale'
             elif batt < 30:
-                bg_color, text_color = '#f4d4d4', '#000000'
+                state_class = 'online battery-critical'
             elif batt < 50:
-                bg_color, text_color = '#f4f0d4', '#000000'
+                state_class = 'online battery-low'
             else:
-                bg_color, text_color = '#d4f4dd', '#000000'
+                state_class = 'online battery-ok'
 
-            row_styles.append({
-                'display': 'flex', 'alignItems': 'stretch',
-                'height': 'calc(5.5 * clamp(12px, 1vw, 14px) + 2 * 0.5vh + 16px)',
-                'border': '1px solid #ddd', 'borderRadius': '12px', 'padding': '8px',
-                'margin': '0.5vh 0', 'backgroundColor': bg_color, 'color': text_color,
-                'boxShadow': '0 2px 5px rgba(0,0,0,0.1)', 'transition': 'all 0.2s ease'
-            })
+            row_classes.append(f'drone-row {state_class}')
 
             states.append(f"State: {status_text}")
             ages.append(f"Last seen: {age_text}")
@@ -972,14 +886,9 @@ def update_dashboard(n, dynamic_ids):
             alts.append(f"Alt: {gps[2]:.1f}")
 
             airborne = gps[2] > 2.0
-            airborne_dots.append({
-                'width': 'clamp(8px, 1vw, 14px)', 'height': 'clamp(8px, 1vw, 14px)',
-                'backgroundColor': '#4CAF50' if airborne else '#F44336',
-                'border': '1px solid #333', 'borderRadius': '50%',
-                'boxShadow': '0 1px 2px rgba(0,0,0,0.2)'
-            })
+            airborne_dots.append('status-dot airborne' if airborne else 'status-dot grounded')
 
-    return row_styles, states, ages, modes, batts, lats, lons, alts, airborne_dots
+    return row_classes, states, ages, modes, batts, lats, lons, alts, airborne_dots
 
 
 @app.callback(

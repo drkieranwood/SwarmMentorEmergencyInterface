@@ -73,6 +73,142 @@
 
 
 /* =====================================================
+   Agent card
+   Height is sized to fit 5 lines of clamped text
+   plus row padding — the phone-portrait breakpoint
+   below overrides this to auto so a taller button
+   grid can grow the card.
+   ===================================================== */
+.drone-row {
+    display: flex;
+    align-items: stretch;
+    height: calc(5.5 * clamp(12px, 1vw, 14px) + 2 * 0.5vh + 16px);
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    padding: 8px;
+    margin: 0.5vh 0;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Connection / battery state colours set by the update_dashboard callback */
+.drone-row.offline                { background-color: #f0f0f0; color: #aaaaaa; }
+.drone-row.online.stale           { background-color: #d4eaf4; color: #000; } /* connected but no data in >20 s */
+.drone-row.online.battery-critical{ background-color: #f4d4d4; color: #000; } /* < 30 % */
+.drone-row.online.battery-low     { background-color: #f4f0d4; color: #000; } /* 30–49 % */
+.drone-row.online.battery-ok      { background-color: #d4f4dd; color: #000; } /* ≥ 50 % */
+
+
+/* Column internal layout — all three data columns stack content vertically and centre it */
+.agent-col-identity,
+.agent-col-status,
+.agent-col-telemetry {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+/* Buttons column needs full height so the grid can fill it */
+.agent-col-buttons {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+
+/* Vertical rule between columns.
+   Width and colour are fixed; height matches the card content area. */
+.agent-div {
+    width: 1px;
+    height: 6vh;
+    background-color: #999;
+    margin: 0 5px;
+    flex-shrink: 0;
+}
+
+
+/* Identity column text */
+.drone-label {
+    font-weight: bold;
+    font-size: clamp(12px, 1.5vw, 18px);
+    line-height: 1.1;
+    font-family: monospace;
+}
+
+/* IP, State, Last seen, Mode lines */
+.drone-meta  { font-size: clamp(10px, 1vw, 14px); }
+
+/* Battery, Lat, Lon, Alt lines */
+.drone-telem { font-size: clamp(10px, 1vw, 14px); }
+
+/* Last-error message — truncated to one line so it can't break the card layout */
+.drone-error {
+    font-size: clamp(9px, 0.9vw, 11px);
+    color: #333;
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+
+/* Status indicator row (Airborne / Retry OK / Healthy) */
+.status-indicator {
+    display: flex;
+    align-items: center;
+    margin-bottom: 0.3vh;
+}
+
+.status-label {
+    font-size: clamp(10px, 1vw, 12px);
+    margin-left: 5px;
+    white-space: nowrap;
+}
+
+/* Coloured dot shared by status indicators and the airborne dot */
+.status-dot {
+    width: clamp(8px, 1vw, 14px);
+    height: clamp(8px, 1vw, 14px);
+    border: 1px solid #333;
+    border-radius: 50%;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    flex-shrink: 0;
+}
+.status-dot.dot-on,
+.status-dot.airborne { background-color: #4CAF50; }
+.status-dot.dot-off,
+.status-dot.grounded { background-color: #F44336; }
+
+
+/* Button grid: 3 cols × 2 rows on desktop.
+   Phone-portrait breakpoint overrides to 2 × 3 with !important. */
+.agent-btn-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: 4px;
+    flex: 1;
+}
+
+/* Base style for all six per-drone command buttons */
+.drone-btn {
+    width: 100%;
+    height: 100%;
+    font-size: clamp(10px, 1vw, 14px);
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    background-color: #f7f7f7;
+    cursor: pointer;
+}
+
+/* Goto is tinted blue — signals to the pilot that a map target must be staged first */
+.drone-btn.drone-btn-goto    { background-color: #d9e8ff; }
+
+/* Return CTL hands control back to the pilot app — red tint marks it as safety-critical */
+.drone-btn.drone-btn-release { background-color: #fff0f0; color: #a00000; }
+
+
+/* =====================================================
    DESKTOP / 4K  (≥ 1025 px)
    Collapsed : identity (145) + status (92) + telemetry (122)
                + 2 dividers (22) + overhead (27) = 408 px

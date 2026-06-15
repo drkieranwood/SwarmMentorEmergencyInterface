@@ -1,0 +1,86 @@
+/* =============================================
+   layout.css — page skeleton, title, status
+   strip, fleet-wide buttons, shared base
+   ============================================= */
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+}
+
+/* Thin scrollbar — less visual noise than the OS default */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 4px; }
+
+/* Root wrapper: full-viewport vertical column.
+   overflow:hidden clips children so the outer page never scrolls. */
+.main-layout {
+    height: 100vh;
+    width: 100vw;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-sizing: border-box;
+    padding: 12px;
+    gap: 12px;
+}
+
+/* Fluid font so the title doesn't overflow on small screens */
+.dashboard-title {
+    font-weight: 600;
+    font-size: clamp(16px, 1.8vw, 22px);
+    margin: 0 0 4px 0;
+    line-height: 1.1;
+}
+
+/* One-line status / last-command strip beneath the title */
+#button-output {
+    width: 100%;
+    padding: 6px 12px;
+    background-color: #f9f9f9;
+    border: 1px solid #ddd;
+    margin-bottom: 6px;
+    font-size: 13px;
+    border-radius: 6px;
+    box-sizing: border-box;
+}
+
+/* Row holding TAKEOFF ALL / HOLD ALL / LAND ALL / RTL ALL */
+.global-actions {
+    display: flex;
+    align-items: stretch;
+    margin-bottom: 20px;
+}
+
+/* Shared appearance for all top-level command buttons.
+   margin-right spaces them from each other in the global-actions row;
+   the map overlay overrides width and margin for its own button. */
+.btn-global {
+    height: 40px;
+    padding: 0 16px;
+    font-weight: bold;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    background-color: #f7f7f7;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-right: 6px;
+}
+
+/* Main content area: map fills the left, agent sidebar overlays the right.
+   flex:1 + min-height:0 allow this row to absorb all remaining vertical space
+   without overflowing the outer column. */
+.content-row {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+}
+
+button:hover {
+    background-color: #e0e0e0;
+    transform: scale(1.03);
+    transition: all 0.2s ease;
+}
