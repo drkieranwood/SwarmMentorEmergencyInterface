@@ -4,7 +4,8 @@
     "alt": 50,
     "radius": 100,
     "offset": 20,
-	"tgtalt": 20,
-	"rtlalt": 20,
-	"rspeed": 20
+    "tgtalt": 20,
+    "rtlalt": 20,
+    "rspeed": 20,
+    "tile_folder": "nenana"
 }

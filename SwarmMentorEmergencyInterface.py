@@ -551,10 +551,18 @@ default_values = [
     defaults_data.get("rtlalt", 0)
 ]
 
+default_tile_folder = defaults_data.get("tile_folder", "FairbanksTestSite")
+
 
 # -----------------------------
 # Utility layout builders (Declared BEFORE layout to fix NameError)
 # -----------------------------
+def get_tile_folders():
+    tiles_dir = os.path.join("assets", "tiles")
+    try:
+        return sorted([d for d in os.listdir(tiles_dir) if os.path.isdir(os.path.join(tiles_dir, d))])
+    except OSError:
+        return []
 def ip_label(ip):
     if not ip:
         return "---"
@@ -696,7 +704,7 @@ app.layout = html.Div([
                 maxZoom=22,
                 doubleClickZoom=False,
                 children=[
-                    dl.TileLayer(url="/tiles/FairbanksTestSite/{z}/{x}/{y}.jpg", tms=False, noWrap=True, minZoom=1, maxZoom=22),
+                    dl.TileLayer(id='tile-layer', url=f"/tiles/{default_tile_folder}/{{z}}/{{x}}/{{y}}.jpg", tms=False, noWrap=True, minZoom=1, maxZoom=22),
                     dl.LayerGroup(id='layer-rtl-targets'),
                     dl.LayerGroup(id='layer-targets'),
                     dl.LayerGroup(id='map-markers'),
@@ -704,6 +712,14 @@ app.layout = html.Div([
                 ],
             ),
             html.Div(children=[
+                dcc.Dropdown(
+                    id='tile-folder-dropdown',
+                    options=[{'label': f, 'value': f} for f in get_tile_folders()],
+                    value=default_tile_folder,
+                    clearable=False,
+                    searchable=False,
+                    className='tile-folder-dropdown',
+                ),
                 html.Button("Center Map", id="map-center", n_clicks=0, className='btn-global'),
                 html.Div([
                     html.Div("Goto Height (m)", className='goto-height-label'),
@@ -877,6 +893,20 @@ def center_map_on_agents(n_clicks):
         "zoom": zoom-1,
         "transition": "flyTo"
     }
+
+@app.callback(
+    Output('tile-layer', 'url'),
+    Input('tile-folder-dropdown', 'value'),
+    prevent_initial_call=True
+)
+def update_tile_folder(folder):
+    if not folder:
+        return dash.no_update
+    defaults_data['tile_folder'] = folder
+    with open("assets/defaults.json", "w") as f:
+        json.dump(defaults_data, f, indent=4)
+    return f"/tiles/{folder}/{{z}}/{{x}}/{{y}}.jpg"
+
 
 @app.callback(
     Output({'type': 'agent-row-style', 'index': ALL}, 'className'),
