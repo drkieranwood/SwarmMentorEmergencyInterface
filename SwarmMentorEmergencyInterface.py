@@ -20,6 +20,7 @@ from flask import send_from_directory
 import dash
 from dash import html, dcc, ctx
 from dash.dependencies import Input, Output, State, ALL
+from drone_logger import ULogWriter
 
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)  # Only show critical errors, hiding standard 200 POST logs
@@ -49,58 +50,6 @@ DRONE_CONNECT_TIMEOUT = float(os.getenv("SWARM_DRONE_CONNECT_TIMEOUT", "3.0"))
 DRONE_RETRY_INTERVAL = float(os.getenv("SWARM_DRONE_RETRY_INTERVAL", "15.0"))
 DRONE_SYNC_INTERVAL = float(os.getenv("SWARM_DRONE_SYNC_INTERVAL", "0.5"))
 
-
-
-# -----------------------------
-# ASCII flight log recorder
-# -----------------------------
-class ULogWriter:
-    """Write drone telemetry and commands to a plain-text log file.
-
-    Each line: ISO-timestamp TYPE key=value ...
-    Types: TELEM, CMD
-    """
-
-    def __init__(self, filepath):
-        self._f = open(filepath, 'w', encoding='utf-8', buffering=1)  # line-buffered
-        self._lock = threading.Lock()
-        self._f.write(f"# FlightBoard log started {datetime.now().isoformat()}\n")
-        self._f.write("# TELEM: timestamp id lat lon alt batt heading armed airborne\n")
-        self._f.write("# EVENT: timestamp id event=CONNECT|DISCONNECT\n")
-        self._f.write("# CMD:   timestamp id action [detail...]\n")
-        print(f"[LOG] Logging to {filepath}")
-
-    def _ts(self):
-        return datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f')
-
-    def log_telemetry(self, drone_id, lat, lon, alt, batt_pct, heading, armed, airborne):
-        line = (
-            f"{self._ts()} TELEM"
-            f" id={drone_id}"
-            f" lat={lat:.7f} lon={lon:.7f} alt={alt:.2f}"
-            f" batt={batt_pct:.1f}"
-            f" hdg={heading:.1f}"
-            f" armed={int(bool(armed))}"
-            f" airborne={int(bool(airborne))}\n"
-        )
-        with self._lock:
-            self._f.write(line)
-
-    def log_event(self, drone_id, event):
-        with self._lock:
-            self._f.write(f"{self._ts()} EVENT id={drone_id} event={event}\n")
-
-    def log_command(self, drone_id, action, detail=''):
-        line = f"{self._ts()} CMD id={drone_id} action={action}"
-        if detail:
-            line += f" {detail}"
-        line += '\n'
-        with self._lock:
-            self._f.write(line)
-
-    def close(self):
-        with self._lock:
-            self._f.close()
 
 
 # -----------------------------
@@ -174,6 +123,7 @@ class DJIInterface:
         self._running = False
 
         self.connected = False
+        self.has_ever_connected = False
         self.last_error = ""
         self.last_http_error = ""  # <-- NEW: Keep track of HTTP issues separately
         self.last_seen = 0.0
@@ -222,6 +172,7 @@ class DJIInterface:
                 # The connection is successful because no thrown exceptions from sock.connect
                 sock.settimeout(4.0)  # Give up to 2 seconds between data frames
                 self.connected = True
+                self.has_ever_connected = True
                 self.retrying = False
                 self.last_error = ""
                 print(f"[FLEET] Connected IP={self.IP_RC} telemetry={self.telemetryPort}")
@@ -259,8 +210,8 @@ class DJIInterface:
                 # There was an issue with either the initial connection, or anything else with the socket.
                 # Active failure state: immediately clean up everything
                 self._set_disconnected(str(exc))
-                #TODO Many drones are not connected at startup, so this spams the console. Only output if a drone had a connection which was then lost.
-                print(f"[FLEET] Telemetry disconnected IP={self.IP_RC}: {exc}. Retrying in {self.retry_interval}s...")
+                if self.has_ever_connected:
+                    print(f"[FLEET] Telemetry lost IP={self.IP_RC}: {exc}. Retrying in {self.retry_interval}s...")
 
                 #If the socket was opened, but the error was elsewhere, then clean up.
                 if sock is not None:
@@ -534,8 +485,8 @@ class DroneFleetManager:
                 if connected:
                     ulog.log_telemetry(
                         drone_id=drone_id, lat=lat, lon=lon, alt=alt,
-                        batt_pct=float(battery) if isinstance(battery, (int, float)) else 0.0,
                         heading=heading,
+                        batt_pct=float(battery) if isinstance(battery, (int, float)) else 0.0,
                         armed=not manual_override,
                         airborne=alt > 0.5,
                     )
@@ -546,8 +497,19 @@ class DroneFleetManager:
                     self.retry_drones.append(drone_id)
 
     def _sync_loop(self):
+        summary_tick = 0
         while self._running:
             self._sync_snapshot()
+            summary_tick += 1
+            if summary_tick >=30:
+                summary_tick = 0
+                with self.lock:
+                    waiting_ips = [
+                        self.ip_by_id[did] for did in self.retry_drones
+                        if not self.managers[did].has_ever_connected
+                    ]
+                if waiting_ips:
+                    print(f"[FLEET] {len(waiting_ips)} drone(s) waiting to connect: {', '.join(waiting_ips)}")
             time.sleep(1.0)
 
     def calculate_bearing(self, lat1, lon1, lat2, lon2):
@@ -627,6 +589,13 @@ def create_agent_bar(agent_id, ip, name, online, retrying, last_seen, gps, batt,
         id={'type': 'agent-row-style', 'index': agent_id},
         className='drone-row offline',
         children=[
+            html.Button(
+                "⏻",
+                id={'type': 'drone-activate-btn', 'index': agent_id},
+                n_clicks=0,
+                className='drone-activate-btn drone-inactive',
+                type="button"
+            ),
             html.Div([
                 html.Div(f"Drone {name}", className='drone-label'),
                 html.Div(f"IP: {ip}", className='drone-meta'),
@@ -702,6 +671,9 @@ app.layout = html.Div([
     html.H1("FlightBoard Dashboard", className='dashboard-title'),
     html.Div(id="button-output"),
     html.Div([
+        html.Button("ACTIVATE ALL", id="activate-all-btn", n_clicks=0, className='btn-global btn-activate-all'),
+        html.Button("DEACTIVATE ALL", id="deactivate-all-btn", n_clicks=0, className='btn-global btn-deactivate-all'),
+        html.Div(className='global-actions-divider'),
         html.Button("TAKEOFF ALL", id="takeoff-all", n_clicks=0, className='btn-global'),
         html.Button("HOLD ALL", id="hold-all", n_clicks=0, className='btn-global'),
         html.Button("LAND ALL", id="land-all", n_clicks=0, className='btn-global'),
@@ -765,6 +737,7 @@ app.layout = html.Div([
     dcc.Interval(id='interval-map', interval=250, n_intervals=0),
     dcc.Store(id='viewport-width', storage_type='session'),
     dcc.Store(id="resize-trigger"),
+    dcc.Store(id='activated-drones', data=[]),
 
     html.Div(id='debug-output', style={'display':'none'}),
     html.Div(id='map-click-left-output', style={'display': 'none'}),
@@ -777,13 +750,59 @@ app.layout = html.Div([
 # Callbacks
 # -----------------------------
 @app.callback(
+    Output('activated-drones', 'data'),
+    Input({'type': 'drone-activate-btn', 'index': ALL}, 'n_clicks'),
+    Input('activate-all-btn', 'n_clicks'),
+    Input('deactivate-all-btn', 'n_clicks'),
+    State({'type': 'drone-activate-btn', 'index': ALL}, 'id'),
+    State('activated-drones', 'data'),
+    prevent_initial_call=True
+)
+def update_activated_drones(_toggle_clicks, _n_activate_all, _n_deactivate_all, btn_ids, current_activated):
+    triggered_id = ctx.triggered_id
+    all_ids = [b['index'] for b in btn_ids]
+
+    if triggered_id == 'activate-all-btn':
+        return all_ids
+    if triggered_id == 'deactivate-all-btn':
+        return []
+
+    # Individual toggle
+    drone_id = triggered_id['index']
+    activated = set(current_activated or [])
+    if drone_id in activated:
+        activated.discard(drone_id)
+    else:
+        activated.add(drone_id)
+    return list(activated)
+
+
+@app.callback(
+    Output({'type': 'drone-activate-btn', 'index': ALL}, 'className'),
+    Output({'type': 'drone-activate-btn', 'index': ALL}, 'children'),
+    Input('activated-drones', 'data'),
+    State({'type': 'drone-activate-btn', 'index': ALL}, 'id'),
+)
+def update_activate_button_appearance(activated, btn_ids):
+    activated_set = set(activated or [])
+    classnames = []
+    for b in btn_ids:
+        if b['index'] in activated_set:
+            classnames.append('drone-activate-btn drone-active')
+        else:
+            classnames.append('drone-activate-btn drone-inactive')
+    return classnames, ['⏻'] * len(btn_ids)
+
+
+@app.callback(
     Output('debug-output', 'children'),
     Input({'type': 'agent-btn', 'index': ALL}, 'n_clicks_timestamp'),
     State({'type': 'agent-btn', 'index': ALL}, 'id'),
     State('goto-height', 'value'),
+    State('activated-drones', 'data'),
     prevent_initial_call=True
 )
-def debug_buttons(timestamps, ids, dynamic_height):
+def debug_buttons(timestamps, ids, dynamic_height, activated_drones):
     valid = [(ts, i) for i, ts in enumerate(timestamps) if ts is not None]
     if not valid:
         return dash.no_update
@@ -794,6 +813,8 @@ def debug_buttons(timestamps, ids, dynamic_height):
 
     if drone_id.isdigit():
         drone_id_int = int(drone_id)
+        if drone_id_int not in (activated_drones or []):
+            return dash.no_update
         action = action.lower()
 
         if action == 'goto' and dynamic_height is not None:
@@ -856,9 +877,11 @@ def center_map_on_agents(n_clicks):
     Output({'type': 'agent-alt-txt', 'index': ALL}, 'children'),
     Output({'type': 'agent-airborne-dot', 'index': ALL}, 'className'),
     Input('interval-agents', 'n_intervals'),
-    State({'type': 'agent-state-txt', 'index': ALL}, 'id')
+    State({'type': 'agent-state-txt', 'index': ALL}, 'id'),
+    State('activated-drones', 'data'),
 )
-def update_dashboard(n, dynamic_ids):
+def update_dashboard(n, dynamic_ids, activated_drones):
+    activated_set = set(activated_drones or [])
     row_classes = []
     states, ages, modes, batts, lats, lons, alts, airborne_dots = [], [], [], [], [], [], [], []
 
@@ -887,7 +910,8 @@ def update_dashboard(n, dynamic_ids):
             else:
                 state_class = 'online battery-ok'
 
-            row_classes.append(f'drone-row {state_class}')
+            active_class = ' activated' if drone_id in activated_set else ' deactivated'
+            row_classes.append(f'drone-row {state_class}{active_class}')
 
             states.append(f"State: {status_text}")
             ages.append(f"Last seen: {age_text}")
@@ -1029,9 +1053,10 @@ def show_rtl_all_confirm(n): return True
     Input('hold-all', 'n_clicks'),
     Input('confirm-land-all', 'submit_n_clicks'),
     Input('confirm-rtl-all', 'submit_n_clicks'),
+    State('activated-drones', 'data'),
     prevent_initial_call=True
 )
-def handle_all_buttons(n_takeoff, n_hold, n_land_confirm, n_rtl_confirm):
+def handle_all_buttons(_n_takeoff, _n_hold, n_land_confirm, n_rtl_confirm, activated_drones):
     triggered_id = ctx.triggered_id
     if triggered_id is None: return dash.no_update
 
@@ -1041,9 +1066,13 @@ def handle_all_buttons(n_takeoff, n_hold, n_land_confirm, n_rtl_confirm):
     elif triggered_id == "confirm-rtl-all" and n_rtl_confirm: action = "RTL"
     else: return dash.no_update
 
-    print(f"[DEBUG] ALL button action confirmed via Safety Interface: {action}")
-    send_command_all(action)
-    return f"ALL action executed: {action}"
+    targets = activated_drones or []
+    if not targets:
+        return "No drones activated — nothing sent."
+
+    print(f"[COMMAND] {action} ALL -> {len(targets)} activated drone(s): {targets}")
+    send_command_activated(action, targets)
+    return f"{action} sent to {len(targets)} activated drone(s)."
 
 
 def send_command(drone_id: int, action: str):
@@ -1095,10 +1124,10 @@ def send_command(drone_id: int, action: str):
         print(f"[WARNING] Unknown action token invocation for Drone {drone_id}: {action}")
 
 
-def send_command_all(action: str):
-    for drone_id in receiver.agents.keys():
+def send_command_activated(action: str, activated_ids: list):
+    for drone_id in activated_ids:
         time.sleep(0.1)
-        send_command(drone_id, action)
+        send_command(int(drone_id), action)
 
 # -----------------------------
 # Run server

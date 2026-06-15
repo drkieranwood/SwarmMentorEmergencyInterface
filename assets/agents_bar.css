@@ -180,6 +180,40 @@
 .status-dot.grounded { background-color: #F44336; }
 
 
+/* Activate / deactivate toggle — narrow power-symbol button, full row height */
+.drone-activate-btn {
+    flex: 0 0 28px;
+    align-self: stretch;
+    margin-right: 6px;
+    border-radius: 6px;
+    border: 2px solid #bbb;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+.drone-activate-btn.drone-inactive {
+    background-color: #e0e0e0;
+    color: #aaa;
+    border-color: #bbb;
+}
+.drone-activate-btn.drone-active {
+    background-color: #2e7d32;
+    color: #fff;
+    border-color: #1b5e20;
+}
+.drone-activate-btn.drone-inactive:hover { background-color: #ccc; }
+.drone-activate-btn.drone-active:hover   { background-color: #388e3c; }
+
+/* Dim command buttons when drone is not activated */
+.drone-row.deactivated .drone-btn {
+    opacity: 0.3;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+
 /* Button grid: 3 cols × 2 rows on desktop.
    Phone-portrait breakpoint overrides to 2 × 3 with !important. */
 .agent-btn-grid {
@@ -215,8 +249,8 @@
    Expanded  : + buttons (166) + 1 divider (11)  = 585 px
    ===================================================== */
 @media (min-width: 1025px) {
-    #agents-bar.collapsed { width: 408px; }
-    #agents-bar.expanded  { width: 585px; }
+    #agents-bar.collapsed { width: 442px; }
+    #agents-bar.expanded  { width: 619px; }
 
     #agents-bar.collapsed .agent-col-buttons,
     #agents-bar.collapsed .agent-div-before-buttons { display: none !important; }
@@ -238,8 +272,8 @@
    Expanded  : + buttons (150) + 1 divider (11)  = 533 px
    ===================================================== */
 @media (min-width: 481px) and (max-width: 1024px) and (orientation: landscape) {
-    #agents-bar.collapsed { width: 372px; }
-    #agents-bar.expanded  { width: 533px; }
+    #agents-bar.collapsed { width: 406px; }
+    #agents-bar.expanded  { width: 567px; }
 
     #agents-bar.collapsed .agent-col-buttons,
     #agents-bar.collapsed .agent-div-before-buttons { display: none !important; }
@@ -262,8 +296,8 @@
                + 2 dividers (22)                = 490 px (cap 96vw)
    ===================================================== */
 @media (min-width: 481px) and (max-width: 1024px) and (orientation: portrait) {
-    #agents-bar.collapsed { width: 228px; }
-    #agents-bar.expanded  { width: min(490px, 96vw); }
+    #agents-bar.collapsed { width: 262px; }
+    #agents-bar.expanded  { width: min(524px, 96vw); }
 
     #agents-bar.collapsed .agent-col-telemetry,
     #agents-bar.collapsed .agent-col-buttons,
@@ -288,8 +322,8 @@
                + 2 dividers (22)                = 458 px (cap 90vw)
    ===================================================== */
 @media (max-width: 767px) and (orientation: landscape) {
-    #agents-bar.collapsed { width: 211px; }
-    #agents-bar.expanded  { width: min(458px, 90vw); max-width: 90vw; }
+    #agents-bar.collapsed { width: 245px; }
+    #agents-bar.expanded  { width: min(492px, 90vw); max-width: 90vw; }
 
     #agents-bar.collapsed .agent-col-telemetry,
     #agents-bar.collapsed .agent-col-buttons,
@@ -318,8 +352,8 @@
    The row height grows to fit — override the JS-computed fixed height.
    ===================================================== */
 @media (max-width: 480px) and (orientation: portrait) {
-    #agents-bar.collapsed { width: 115px; }
-    #agents-bar.expanded  { width: min(372px, 98vw); max-width: 98vw; }
+    #agents-bar.collapsed { width: 149px; }
+    #agents-bar.expanded  { width: min(406px, 98vw); max-width: 98vw; }
 
     #agents-bar.collapsed .agent-col-status,
     #agents-bar.collapsed .agent-col-telemetry,
