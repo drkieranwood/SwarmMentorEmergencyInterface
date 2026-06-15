@@ -1,0 +1,2 @@
+# Test configuration — points at the local simulator (test_drone_sim.py)
+127.0.0.1, Sim

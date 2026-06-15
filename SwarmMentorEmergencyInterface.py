@@ -1,6 +1,7 @@
 # -----------------------------
 # FlightBoard.py
 # -----------------------------
+import base64
 import time
 import json
 import math
@@ -983,25 +984,34 @@ def update_rtl_target_markers(n):
     return markers
 
 
+def _svg_uri(svg: str) -> str:
+    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode()).decode()
+
 def _drone_map_markers(name, lat, lon, alt, heading):
-    """Return [arrow_marker, label_marker] for a single drone using DivIcon."""
-    arrow_html = (
-        f'<div style="width:48px;height:48px;transform:rotate({heading:.0f}deg)">'
-        f'<svg viewBox="0 0 48 48" width="48" height="48" xmlns="http://www.w3.org/2000/svg">'
+    """Return [arrow_marker, label_marker] using inline SVG data URIs (no DivIcon needed)."""
+    arrow_svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">'
+        f'<g transform="rotate({heading:.1f} 24 24)">'
         f'<polygon points="24,3 41,45 24,35 7,45" fill="#1E88E5" stroke="#0D47A1" stroke-width="2"/>'
-        f'</svg></div>'
+        f'</g></svg>'
     )
-    label_html = f'<div class="drone-map-label">{name}</div>'
+    label_svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">'
+        f'<circle cx="16" cy="16" r="14" fill="#1E88E5" stroke="#0D47A1" stroke-width="2"/>'
+        f'<text x="16" y="21" font-family="monospace" font-size="11" font-weight="bold" '
+        f'fill="white" text-anchor="middle">{name}</text>'
+        f'</svg>'
+    )
     tooltip = dl.Tooltip(f"Drone {name}: Alt: {alt:.1f}m, Hdg: {heading:.1f}°")
     return [
         dl.Marker(
             position=[lat, lon],
-            icon=dl.DivIcon(html=arrow_html, iconSize=[48, 48], iconAnchor=[24, 24], className=''),
+            icon={"iconUrl": _svg_uri(arrow_svg), "iconSize": [48, 48], "iconAnchor": [24, 24]},
             zIndexOffset=999,
         ),
         dl.Marker(
             position=[lat, lon],
-            icon=dl.DivIcon(html=label_html, iconSize=[32, 32], iconAnchor=[16, 16], className=''),
+            icon={"iconUrl": _svg_uri(label_svg), "iconSize": [32, 32], "iconAnchor": [16, 16]},
             children=tooltip,
             zIndexOffset=1000,
         ),
