@@ -1,0 +1,5 @@
+# Offline map tiles (large binary data — see assets/tiles/README.md)
+assets/tiles/*/
+
+# Runtime logs
+logs/*.log
