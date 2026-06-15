@@ -65,18 +65,18 @@ class ULogWriter:
         self._f = open(filepath, 'w', encoding='utf-8', buffering=1)  # line-buffered
         self._lock = threading.Lock()
         self._f.write(f"# FlightBoard log started {datetime.now().isoformat()}\n")
-        self._f.write("# TELEM: timestamp sysid lat lon alt batt heading armed airborne\n")
-        self._f.write("# EVENT: timestamp sysid event=CONNECT|DISCONNECT\n")
-        self._f.write("# CMD:   timestamp sysid action [detail...]\n")
+        self._f.write("# TELEM: timestamp id lat lon alt batt heading armed airborne\n")
+        self._f.write("# EVENT: timestamp id event=CONNECT|DISCONNECT\n")
+        self._f.write("# CMD:   timestamp id action [detail...]\n")
         print(f"[LOG] Logging to {filepath}")
 
     def _ts(self):
         return datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f')
 
-    def log_telemetry(self, sysid, lat, lon, alt, batt_pct, heading, armed, airborne):
+    def log_telemetry(self, drone_id, lat, lon, alt, batt_pct, heading, armed, airborne):
         line = (
             f"{self._ts()} TELEM"
-            f" sysid={sysid}"
+            f" id={drone_id}"
             f" lat={lat:.7f} lon={lon:.7f} alt={alt:.2f}"
             f" batt={batt_pct:.1f}"
             f" hdg={heading:.1f}"
@@ -86,12 +86,12 @@ class ULogWriter:
         with self._lock:
             self._f.write(line)
 
-    def log_event(self, sysid, event):
+    def log_event(self, drone_id, event):
         with self._lock:
-            self._f.write(f"{self._ts()} EVENT sysid={sysid} event={event}\n")
+            self._f.write(f"{self._ts()} EVENT id={drone_id} event={event}\n")
 
-    def log_command(self, sysid, action, detail=''):
-        line = f"{self._ts()} CMD sysid={sysid} action={action}"
+    def log_command(self, drone_id, action, detail=''):
+        line = f"{self._ts()} CMD id={drone_id} action={action}"
         if detail:
             line += f" {detail}"
         line += '\n'
@@ -129,16 +129,16 @@ def load_drone_ip_list(file_path):
         for index, item in enumerate(items, start=1):
             if isinstance(item, dict):
                 ip_address = item.get("ip") or item.get("address") or item.get("host")
-                sysid = int(item.get("sysid", index))
+                drone_id = int(item.get("id", index))
             else:
                 ip_address = str(item).strip()
-                sysid = index
+                drone_id = index
 
             if ip_address:
                 name = item.get("name", "").strip() if isinstance(item, dict) else ""
                 if not name:
                     name = ip_address.split(".")[-1].zfill(3)
-                results.append({"sysid": sysid, "ip": ip_address, "name": name})
+                results.append({"id": drone_id, "ip": ip_address, "name": name})
         return results
 
     results = []
@@ -153,16 +153,16 @@ def load_drone_ip_list(file_path):
         else:
             ip_part = stripped
             name = ip_part.split(".")[-1].zfill(3)
-        results.append({"sysid": index, "ip": ip_part, "name": name})
+        results.append({"id": index, "ip": ip_part, "name": name})
     return results
 
 
 class DJIInterface:
     """Per-drone manager that keeps a TCP telemetry connection alive and sends HTTP commands."""
 
-    def __init__(self, IP_RC="", sysid=None, telemetry_port=8081, retry_interval=15.0, connect_timeout=5.0):
+    def __init__(self, IP_RC="", drone_id=None, telemetry_port=8081, retry_interval=15.0, connect_timeout=5.0):
         self.IP_RC = IP_RC or ""
-        self.sysid = sysid
+        self.drone_id = drone_id
         self.telemetryPort = telemetry_port
         self.retry_interval = retry_interval
         self.connect_timeout = connect_timeout
@@ -180,19 +180,26 @@ class DJIInterface:
         self.retrying = False
 
     def startTelemetryStream(self):
+        """If not already running, create a thread to receive incomming telemetry async.
+           This opens and maintains the socket connection.
+        """
         if self._running:
             return
+        #a flag to allow the thread to be broken from the main
         self._running = True
         self._telemetry_thread = threading.Thread(target=self._telemetry_receiver, daemon=True)
         self._telemetry_thread.start()
 
     def stopTelemetryStream(self):
+        """Break the connection reciver loop by settin the thread break flag.
+        """
+        #TODO does this clean up gracefully and instantly?
         self._running = False
         if self._telemetry_thread:
             self._telemetry_thread.join(timeout=2)
 
     def _set_disconnected(self, error_message):
-        """Forces a clean reset of connection states."""
+        """Forces a clean reset of connection states in the main thread."""
         self.connected = False
         self.retrying = True
         self.last_error = error_message
@@ -203,19 +210,21 @@ class DJIInterface:
             sock = None
             buffer = ""
             try:
+                # Setup for a fresh connection attempt
                 self.retrying = True
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.settimeout(self.connect_timeout)
-                
+
                 # Try opening a fresh socket connection
                 sock.connect((self.IP_RC, self.telemetryPort))
-                
+
                 # Connection successful! Update states
-                sock.settimeout(2.0)  # Give up to 2 seconds between data frames
+                # The connection is successful because no thrown exceptions from sock.connect
+                sock.settimeout(4.0)  # Give up to 2 seconds between data frames
                 self.connected = True
                 self.retrying = False
                 self.last_error = ""
-                print(f"[FLEET] Connected SYSID={self.sysid} IP={self.IP_RC} telemetry={self.telemetryPort}")
+                print(f"[FLEET] Connected IP={self.IP_RC} telemetry={self.telemetryPort}")
 
                 # Inner data ingestion loop
                 while self._running:
@@ -247,20 +256,23 @@ class DJIInterface:
                         raise TimeoutError("No telemetry data received within timeout threshold.")
 
             except Exception as exc:
+                # There was an issue with either the initial connection, or anything else with the socket.
                 # Active failure state: immediately clean up everything
                 self._set_disconnected(str(exc))
-                print(f"[FLEET] Telemetry disconnected SYSID={self.sysid} IP={self.IP_RC}: {exc}. Retrying in {self.retry_interval}s...")
-                
+                #TODO Many drones are not connected at startup, so this spams the console. Only output if a drone had a connection which was then lost.
+                print(f"[FLEET] Telemetry disconnected IP={self.IP_RC}: {exc}. Retrying in {self.retry_interval}s...")
+
+                #If the socket was opened, but the error was elsewhere, then clean up.
                 if sock is not None:
                     try:
                         sock.shutdown(socket.SHUT_RDWR)
                         sock.close()
                     except Exception:
                         pass
-                
+
                 # Back off before attempting another fresh connection sequence
                 time.sleep(self.retry_interval)
-                
+
             finally:
                 if sock is not None:
                     try:
@@ -284,10 +296,10 @@ class DJIInterface:
         except requests.exceptions.RequestException as exc:
             # FIX: Record the error, but DO NOT drop the entire telemetry stream connection status!
             self.last_http_error = str(exc)
-            print(f"[HTTP ERROR] SYSID={self.sysid} command to {endPoint} failed: {exc}")
+            print(f"[HTTP ERROR] IP={self.IP_RC} command to {endPoint} failed: {exc}")
             return ""
-        
-        
+
+
     def requestSendTakeOff(self):
         return self.requestSend(EP_TAKEOFF, "")
 
@@ -297,7 +309,7 @@ class DJIInterface:
     def requestSendRTH(self):
         self.requestAbortMission()
         return self.requestSend(EP_RTH, "")
-    
+
     def requestSendEnableVirtualStick(self):
         return self.requestSend(EP_ENABLE_VIRTUAL_STICK, "")
 
@@ -339,7 +351,7 @@ class DJIInterface:
         telemetry = self.getTelemetry()
         location = telemetry.get("location", {})
         return {
-            "sysid": self.sysid,
+            "id": self.drone_id,
             "ip": self.IP_RC,
             "connected": self.connected,
             "retrying": self.retrying,
@@ -352,7 +364,7 @@ class DJIInterface:
             "manual_override": self.isManualOverrideActive(),
             "telemetry": telemetry,
         }
-    
+
 # Must match SAFETY_TOKEN hardcoded in the Android app (WildBridgeDefaultLayoutActivity).
 SAFETY_TOKEN = "98"
 SAFETY_TOKEN_HEADER = "X-Safety-Token"
@@ -415,11 +427,11 @@ class DroneFleetManager:
         self.rtl_active = {}
         self.flight_mode_str = {}
         self.connection_state = {}
-        self.ip_by_sysid = {}
-        self.name_by_sysid = {}
+        self.ip_by_id = {}
+        self.name_by_id = {}
         self._prev_connection_state = {}
-        self.last_error_by_sysid = {}
-        self.last_seen_by_sysid = {}
+        self.last_error_by_id = {}
+        self.last_seen_by_id = {}
         self.last_error = {}
         self.last_seen = {}
         self.retrying = {}
@@ -438,54 +450,54 @@ class DroneFleetManager:
             print(f"[FLEET] No drones loaded from {self.drone_list_path}")
 
         for entry in entries:
-            sysid = int(entry["sysid"])
+            drone_id = int(entry["id"])
             ip_address = entry["ip"]
-            
-            if sysid in self.managers:
-                print(f"[FLEET] SYSID={sysid} is already loaded. Skipping re-initialization.")
+
+            if drone_id in self.managers:
+                print(f"[FLEET] Drone ID={drone_id} is already loaded. Skipping re-initialization.")
                 continue
-            
+
             manager = DJIInterfaceSafety(
                 IP_RC=ip_address,
                 safety_token=SAFETY_TOKEN
             )
-            manager.sysid = sysid
+            manager.drone_id = drone_id
             manager.telemetryPort = self.telemetry_port
             manager.retry_interval = self.retry_interval
             manager.connect_timeout = self.connect_timeout
             manager.baseCommandUrl = f"http://{ip_address}:{DRONE_COMMAND_PORT}"
 
-            self.managers[sysid] = manager
-            self.ip_by_sysid[sysid] = ip_address
-            self.name_by_sysid[sysid] = entry.get("name", ip_address.split(".")[-1].zfill(3))
-            
+            self.managers[drone_id] = manager
+            self.ip_by_id[drone_id] = ip_address
+            self.name_by_id[drone_id] = entry.get("name", ip_address.split(".")[-1].zfill(3))
+
             manager.startTelemetryStream()
-            
-            print(f"[FLEET] Spawned Single Managers for SYSID={sysid} IP={ip_address}")
+
+            print(f"[FLEET] Spawned manager for Drone ID={drone_id} IP={ip_address}")
 
     def stop(self):
         self._running = False
-        for sysid in list(self.managers.keys()):
+        for drone_id in list(self.managers.keys()):
             try:
-                self.managers[sysid].stopTelemetryStream()
+                self.managers[drone_id].stopTelemetryStream()
             except Exception as e:
-                print(f"[FLEET] Error stopping manager thread for SYSID {sysid}: {e}")
-                
+                print(f"[FLEET] Error stopping manager thread for Drone {drone_id}: {e}")
+
 
     def _sync_snapshot(self):
         with self.lock:
             self.open_drones = []
             self.retry_drones = []
-            for sysid, manager in self.managers.items():
+            for drone_id, manager in self.managers.items():
                 snapshot = manager.get_snapshot()
 
-                self.connection_state[sysid] = bool(snapshot["connected"])
-                self.last_error_by_sysid[sysid] = snapshot["last_error"]
-                self.last_seen_by_sysid[sysid] = snapshot["last_seen"]
-                self.last_error[sysid] = snapshot["last_error"]
-                self.last_seen[sysid] = snapshot["last_seen"]
-                self.retrying[sysid] = bool(snapshot["retrying"])
-                self.agents[sysid] = snapshot["last_seen"]
+                self.connection_state[drone_id] = bool(snapshot["connected"])
+                self.last_error_by_id[drone_id] = snapshot["last_error"]
+                self.last_seen_by_id[drone_id] = snapshot["last_seen"]
+                self.last_error[drone_id] = snapshot["last_error"]
+                self.last_seen[drone_id] = snapshot["last_seen"]
+                self.retrying[drone_id] = bool(snapshot["retrying"])
+                self.agents[drone_id] = snapshot["last_seen"]
 
                 telemetry = snapshot.get("telemetry", {})
                 location = telemetry.get("location", {})
@@ -499,29 +511,29 @@ class DroneFleetManager:
                 flight_mode = telemetry.get("flightMode", snapshot.get("flight_mode", "UNKNOWN"))
                 manual_override = telemetry.get("isManualOverrideActive", False)
 
-                self.gps_data[sysid] = (lat, lon, alt)
-                self.batt_pct[sysid] = battery
-                self.heading[sysid] = heading
-                self.armed_state[sysid] = not manual_override
-                self.airborne_state[sysid] = alt > 0.5
-                self.rtl_active[sysid] = False
-                self.flight_mode_str[sysid] = flight_mode
+                self.gps_data[drone_id] = (lat, lon, alt)
+                self.batt_pct[drone_id] = battery
+                self.heading[drone_id] = heading
+                self.armed_state[drone_id] = not manual_override
+                self.airborne_state[drone_id] = alt > 0.5
+                self.rtl_active[drone_id] = False
+                self.flight_mode_str[drone_id] = flight_mode
 
                 connected = bool(snapshot["connected"])
-                prev = self._prev_connection_state.get(sysid)
+                prev = self._prev_connection_state.get(drone_id)
                 if prev is None:
                     # first snapshot — log initial state if already online
                     if connected:
-                        ulog.log_event(sysid, 'CONNECT')
+                        ulog.log_event(drone_id, 'CONNECT')
                 elif connected and not prev:
-                    ulog.log_event(sysid, 'CONNECT')
+                    ulog.log_event(drone_id, 'CONNECT')
                 elif not connected and prev:
-                    ulog.log_event(sysid, 'DISCONNECT')
-                self._prev_connection_state[sysid] = connected
+                    ulog.log_event(drone_id, 'DISCONNECT')
+                self._prev_connection_state[drone_id] = connected
 
                 if connected:
                     ulog.log_telemetry(
-                        sysid=sysid, lat=lat, lon=lon, alt=alt,
+                        drone_id=drone_id, lat=lat, lon=lon, alt=alt,
                         batt_pct=float(battery) if isinstance(battery, (int, float)) else 0.0,
                         heading=heading,
                         armed=not manual_override,
@@ -529,9 +541,9 @@ class DroneFleetManager:
                     )
 
                 if snapshot["connected"]:
-                    self.open_drones.append(sysid)
+                    self.open_drones.append(drone_id)
                 else:
-                    self.retry_drones.append(sysid)
+                    self.retry_drones.append(drone_id)
 
     def _sync_loop(self):
         while self._running:
@@ -550,11 +562,11 @@ class DroneFleetManager:
         bearing_deg = math.degrees(bearing_rad)
         return (bearing_deg + 360) % 360
 
-    def _manager(self, sysid):
-        return self.managers.get(sysid)
+    def _manager(self, drone_id):
+        return self.managers.get(drone_id)
 
-    def _safetymanager(self, sysid):            #reroute to prevent needing to change lots of safetymanager->manager later
-        return self.managers.get(sysid)
+    def _safetymanager(self, drone_id):            #reroute to prevent needing to change lots of safetymanager->manager later
+        return self.managers.get(drone_id)
 
 
 # -----------------------------
@@ -731,7 +743,7 @@ app.layout = html.Div([
                 children=[
                     html.Div(
                         create_agent_bar(
-                            agent_id=entry["sysid"],
+                            agent_id=entry["id"],
                             ip=entry["ip"],
                             name=entry["name"],
                             online=False,
@@ -742,7 +754,7 @@ app.layout = html.Div([
                             mode="OFFLINE",
                             last_error=""
                         ),
-                        id=f"agent-row-wrapper-{entry['sysid']}"
+                        id=f"agent-row-wrapper-{entry['id']}"
                     ) for entry in load_drone_ip_list(DRONE_LIST_FILE)
                 ],
             )
@@ -753,7 +765,7 @@ app.layout = html.Div([
     dcc.Interval(id='interval-map', interval=250, n_intervals=0),
     dcc.Store(id='viewport-width', storage_type='session'),
     dcc.Store(id="resize-trigger"),
-    
+
     html.Div(id='debug-output', style={'display':'none'}),
     html.Div(id='map-click-left-output', style={'display': 'none'}),
     html.Div(id='map-click-right-output', style={'display': 'none'}),
@@ -773,23 +785,23 @@ app.layout = html.Div([
 )
 def debug_buttons(timestamps, ids, dynamic_height):
     valid = [(ts, i) for i, ts in enumerate(timestamps) if ts is not None]
-    if not valid: 
+    if not valid:
         return dash.no_update
 
     max_ts, max_idx = max(valid, key=lambda x: x[0])
     btn_id = ids[max_idx]
-    sysid, action = btn_id['index'].split('-')
+    drone_id, action = btn_id['index'].split('-')
 
-    if sysid.isdigit():
-        sysid_int = int(sysid)
+    if drone_id.isdigit():
+        drone_id_int = int(drone_id)
         action = action.lower()
-        
+
         if action == 'goto' and dynamic_height is not None:
             with receiver.lock:
-                if sysid_int in receiver.targets:
-                    receiver.targets[sysid_int]['alt'] = float(dynamic_height)
+                if drone_id_int in receiver.targets:
+                    receiver.targets[drone_id_int]['alt'] = float(dynamic_height)
 
-        send_command(sysid_int, action)
+        send_command(drone_id_int, action)
 
     return dash.no_update
 
@@ -800,28 +812,28 @@ def debug_buttons(timestamps, ids, dynamic_height):
     prevent_initial_call=True
 )
 def center_map_on_agents(n_clicks):
-    if not n_clicks: 
+    if not n_clicks:
         return dash.no_update
-        
+
     with receiver.lock:
-        active_sysids = list(receiver.open_drones)
-        if not active_sysids: 
+        active_drones = list(receiver.open_drones)
+        if not active_drones:
             return dash.no_update
-            
+
         latitudes, longitudes = [], []
-        for sysid in active_sysids:
-            gps = receiver.gps_data.get(sysid)
-            if not gps: 
+        for drone_id in active_drones:
+            gps = receiver.gps_data.get(drone_id)
+            if not gps:
                 continue
             lat, lon, _ = gps
-            if lat == 0 or lon == 0: 
+            if lat == 0 or lon == 0:
                 continue
             latitudes.append(float(lat))
             longitudes.append(float(lon))
 
-        if not latitudes: 
+        if not latitudes:
             return dash.no_update
-            
+
         center_lat, center_lon = calculate_centroid(latitudes, longitudes)
         zoom = calculate_zoom_from_bounds(latitudes, longitudes)
 
@@ -852,13 +864,13 @@ def update_dashboard(n, dynamic_ids):
 
     with receiver.lock:
         for idx_dict in dynamic_ids:
-            sysid = idx_dict['index']
+            drone_id = idx_dict['index']
 
-            online = receiver.connection_state.get(sysid, False)
-            last_seen = receiver.last_seen.get(sysid, 0.0)
-            gps = receiver.gps_data.get(sysid, (0.0, 0.0, 0.0))
-            batt = receiver.batt_pct.get(sysid, 0)
-            mode = receiver.flight_mode_str.get(sysid, "UNKNOWN")
+            online = receiver.connection_state.get(drone_id, False)
+            last_seen = receiver.last_seen.get(drone_id, 0.0)
+            gps = receiver.gps_data.get(drone_id, (0.0, 0.0, 0.0))
+            batt = receiver.batt_pct.get(drone_id, 0)
+            mode = receiver.flight_mode_str.get(drone_id, "UNKNOWN")
 
             status_text = 'ONLINE' if online else 'OFFLINE'
             age_text = 'fresh' if not last_seen else f"{time.time() - last_seen:.1f}s ago"
@@ -908,22 +920,23 @@ def toggle_agents_bar(n):
 def update_map_markers(n):
     markers = []
     with receiver.lock:
-        for sysid in receiver.agents.keys():
-            gps = receiver.gps_data.get(sysid, (0, 0, 0))
+        for drone_id in receiver.agents.keys():
+            gps = receiver.gps_data.get(drone_id, (0, 0, 0))
             lat, lon, _alt = gps
             if lat != 0 and lon != 0:
-                icon_url = f"/assets/blueNumberMarkers/number_{sysid}.png"
+                name = receiver.name_by_id.get(drone_id, str(drone_id))
+                icon_url = f"/assets/blueNumberMarkers/number_{drone_id}.png"
                 markers.append(
                     dl.Marker(
                         position=[lat, lon],
-                        children=dl.Tooltip(f"SYSID: {sysid}, Alt: {_alt}, Yaw: {receiver.heading.get(sysid, 0.0):.1f}°"),
+                        children=dl.Tooltip(f"Drone {name}: Alt: {_alt:.1f}m, Yaw: {receiver.heading.get(drone_id, 0.0):.1f}°"),
                         icon={"iconUrl": icon_url, "iconSize": [48,48], "iconAnchor": [24, 48]},
                         zIndexOffset=1000
                     )
                 )
                 size = 120
-                blue_arrow_icon_url = get_blue_arrow_icon_url(receiver.heading[sysid])
-                anchor_x, anchor_y = compute_arrow_anchor((size, size), receiver.heading[sysid])
+                blue_arrow_icon_url = get_blue_arrow_icon_url(receiver.heading[drone_id])
+                anchor_x, anchor_y = compute_arrow_anchor((size, size), receiver.heading[drone_id])
                 markers.append(
                     dl.Marker(position=[lat,lon], icon={"iconUrl": blue_arrow_icon_url, "iconSize": [size, size], "iconAnchor": [anchor_x, anchor_y]}, zIndexOffset=999)
                 )
@@ -940,11 +953,11 @@ def update_target_markers(n): return []
 def update_rtl_target_markers(n):
     markers = []
     with receiver.lock:
-        for sysid, target in receiver.rtltargets.items():
+        for drone_id, target in receiver.rtltargets.items():
             if not target: continue
             lat, lon, alt = target.get('lat', 0), target.get('lon', 0), target.get('alt', 0)
             if lat == 0 and lon == 0: continue
-            markers.append(dl.Marker(position=[lat, lon], icon={"iconUrl": "/assets/cross.png", "iconSize": [40, 40], "iconAnchor": [20, 20]}, children=dl.Tooltip(f"RTL SYSID {sysid}: {lat:.6f}, {lon:.6f}, alt {alt:.1f}")))
+            markers.append(dl.Marker(position=[lat, lon], icon={"iconUrl": "/assets/cross.png", "iconSize": [40, 40], "iconAnchor": [20, 20]}, children=dl.Tooltip(f"RTL Drone {drone_id}: {lat:.6f}, {lon:.6f}, alt {alt:.1f}")))
     return markers
 
 
@@ -995,9 +1008,9 @@ def add_custom_marker(n_dblclicks, dblclickData, target_alt):
 
     print(f"[STAGED CENTER] Staging shared target hub at Lat: {lat:.6f}, Lon: {lon:.6f}")
     with receiver.lock:
-        sysids = sorted(receiver.agents.keys())
-        targets = generate_circular_targets(center_lat=lat, center_lon=lon, alt=target_alt, radius_m=8.0, offset_deg=0, tgt_alt=target_alt, num_targets=max(len(sysids), 1))
-        receiver.targets = {sysid: target for sysid, target in zip(sysids, targets)}
+        drone_ids = sorted(receiver.agents.keys())
+        targets = generate_circular_targets(center_lat=lat, center_lon=lon, alt=target_alt, radius_m=8.0, offset_deg=0, tgt_alt=target_alt, num_targets=max(len(drone_ids), 1))
+        receiver.targets = {drone_id: target for drone_id, target in zip(drone_ids, targets)}
 
     single_center_marker = dl.Marker(position=[lat, lon], icon={"iconUrl": "/assets/cross.png", "iconSize": [48, 48], "iconAnchor": [24, 24]}, children=dl.Tooltip(f"Staged Swarm Center: {lat:.6f}, {lon:.6f} ({target_alt}m)"))
     return f"Target center set at lat: {lat:.6f}, lon: {lon:.6f}", [single_center_marker]
@@ -1033,59 +1046,59 @@ def handle_all_buttons(n_takeoff, n_hold, n_land_confirm, n_rtl_confirm):
     return f"ALL action executed: {action}"
 
 
-def send_command(sysid: int, action: str):
+def send_command(drone_id: int, action: str):
     """Send a swarm command to a single drone authenticated via Safety Computer Interface."""
     action = action.lower()
-    ulog.log_command(sysid, action)
+    ulog.log_command(drone_id, action)
 
-    manager = receiver._safetymanager(sysid)
+    manager = receiver._safetymanager(drone_id)
     if not manager:
-        print(f"[ERROR] No active authenticated safety manager found for SYSID {sysid}")
+        print(f"[ERROR] No active authenticated safety manager found for Drone {drone_id}")
         return
 
     if action == 'takeoff':
-        print(f"[SAFETY COMMAND] Sending Authenticated TAKEOFF to Drone SYSID {sysid} at IP {manager.IP_RC}")
+        print(f"[SAFETY COMMAND] Sending Authenticated TAKEOFF to IP {manager.IP_RC}")
         manager.requestSendTakeOff()
-        
+
     elif action == 'hold':
-        print(f"[SAFETY COMMAND] Sending Authenticated HOLD/ABORT to Drone SYSID {sysid} at IP {manager.IP_RC}")
+        print(f"[SAFETY COMMAND] Sending Authenticated HOLD/ABORT to IP {manager.IP_RC}")
         manager.requestAbortMission()
-        
+
     elif action == 'goto':
-        target = receiver.targets.get(sysid)
+        target = receiver.targets.get(drone_id)
         if not target:
-            print(f"[WARNING] No staged goto target coordinates found for SYSID {sysid}")
+            print(f"[WARNING] No staged goto target coordinates found for Drone {drone_id}")
             return
-        
+
         lat = target.get('lat', 0)
         lon = target.get('lon', 0)
         alt = target.get('alt', 0)
         yaw = target.get('head', target.get('yaw', 0.0))
-        
-        print(f"[SAFETY COMMAND] Sending Authenticated GOTO to Drone SYSID {sysid} -> Lat: {lat}, Lon: {lon}")
-        ulog.log_command(sysid, 'goto_target', f"lat={lat} lon={lon} alt={alt} yaw={yaw}")
+
+        print(f"[SAFETY COMMAND] Sending Authenticated GOTO to IP {manager.IP_RC} -> Lat: {lat}, Lon: {lon}")
+        ulog.log_command(drone_id, 'goto_target', f"lat={lat} lon={lon} alt={alt} yaw={yaw}")
         manager.requestSendGoToWPwithPID(lat, lon, alt, yaw)
-        
+
     elif action == 'land':
-        print(f"[SAFETY COMMAND] Sending Authenticated LAND to Drone SYSID {sysid} at IP {manager.IP_RC}")
+        print(f"[SAFETY COMMAND] Sending Authenticated LAND to IP {manager.IP_RC}")
         manager.requestSendLand()
-        
+
     elif action == 'rtl':
-        print(f"[SAFETY COMMAND] Sending Authenticated RTL to Drone SYSID {sysid} at IP {manager.IP_RC}")
+        print(f"[SAFETY COMMAND] Sending Authenticated RTL to IP {manager.IP_RC}")
         manager.requestSendRTH()
 
     elif action == 'release':
-        print(f"[SAFETY COMMAND] Releasing Safety Computer Control back to Pilot for SYSID {sysid} at IP {manager.IP_RC}")
+        print(f"[SAFETY COMMAND] Releasing Safety Computer Control back to Pilot for IP {manager.IP_RC}")
         manager.requestReleaseSafetyControl()
-        
+
     else:
-        print(f"[WARNING] Unknown action token invocation for SYSID {sysid}: {action}")
+        print(f"[WARNING] Unknown action token invocation for Drone {drone_id}: {action}")
 
 
 def send_command_all(action: str):
-    for sysid in receiver.agents.keys():
+    for drone_id in receiver.agents.keys():
         time.sleep(0.1)
-        send_command(sysid, action)
+        send_command(drone_id, action)
 
 # -----------------------------
 # Run server
