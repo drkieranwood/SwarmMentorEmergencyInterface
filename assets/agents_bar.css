@@ -1,0 +1,217 @@
+/* ===================================================
+   FlightBoard — Agents Panel Responsive Stylesheet
+
+   Column visibility is controlled by display:none !important
+   (required to beat inline style="display:flex" on columns).
+
+   Panel widths are computed to exactly match visible column
+   widths + dividers + row/container padding overhead (27 px):
+     overhead = container-padding(8) + row-padding(16) + row-border(2) + agents-bar-border(1)
+
+   Breakpoints (non-overlapping):
+     phone portrait  : max-width 480px  + portrait
+     phone landscape : max-width 767px  + landscape
+     iPad portrait   : 481–1024px       + portrait
+     iPad landscape  : 481–1024px       + landscape
+     desktop/4K      : min-width 1025px
+   =================================================== */
+
+
+/* ---------- Panel ---------- */
+#agents-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    box-sizing: border-box;          /* border included in declared width */
+    background: #f9f9f9;
+    border-right: 1px solid #ccc;
+    box-shadow: 2px 0 10px rgba(0,0,0,0.15);
+    overflow: hidden;
+    transition: width 0.22s ease;
+    display: flex;
+    flex-direction: column;
+    z-index: 1000;
+}
+
+
+/* ---------- Toggle button ---------- */
+.toggle-btn {
+    flex: 0 0 auto;
+    height: 40px;
+    border: none;
+    border-bottom: 1px solid #bbb;
+    cursor: pointer;
+    background: #ddd;
+    font-size: 16px;
+    font-weight: bold;
+    /* width stretches automatically via flex align-items:stretch default */
+}
+.toggle-btn:hover { background: #c8c8c8; }
+
+
+/* ---------- Scrollable agent list ---------- */
+#agent-container {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 4px;
+}
+
+
+/* ---------- Column and divider base ---------- */
+.agent-col {
+    flex: 0 0 auto;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+.agent-div { flex: 0 0 auto; }
+
+/* Trailing divider after buttons — always hidden; it only adds dead space */
+.agent-div-trailing { display: none !important; }
+
+
+/* =====================================================
+   DESKTOP / 4K  (≥ 1025 px)
+   Collapsed : identity (145) + status (92) + telemetry (122)
+               + 2 dividers (22) + overhead (27) = 408 px
+   Expanded  : + buttons (166) + 1 divider (11)  = 585 px
+   ===================================================== */
+@media (min-width: 1025px) {
+    #agents-bar.collapsed { width: 408px; }
+    #agents-bar.expanded  { width: 585px; }
+
+    #agents-bar.collapsed .agent-col-buttons,
+    #agents-bar.collapsed .agent-div-before-buttons { display: none !important; }
+
+    .agent-col-identity  { width: 145px; }
+    .agent-col-status    { width:  92px; }
+    .agent-col-telemetry { width: 122px; }
+    .agent-col-buttons   { width: 166px; }
+
+    .agent-col { font-size: clamp(11px, 0.9vw, 14px); }
+    .toggle-btn { height: 40px; }
+}
+
+
+/* =====================================================
+   IPAD LANDSCAPE  (481–1024 px + landscape)
+   Collapsed : identity (130) + status (83) + telemetry (110)
+               + 2 dividers (22) + overhead (27) = 372 px
+   Expanded  : + buttons (150) + 1 divider (11)  = 533 px
+   ===================================================== */
+@media (min-width: 481px) and (max-width: 1024px) and (orientation: landscape) {
+    #agents-bar.collapsed { width: 372px; }
+    #agents-bar.expanded  { width: 533px; }
+
+    #agents-bar.collapsed .agent-col-buttons,
+    #agents-bar.collapsed .agent-div-before-buttons { display: none !important; }
+
+    .agent-col-identity  { width: 130px; }
+    .agent-col-status    { width:  83px; }
+    .agent-col-telemetry { width: 110px; }
+    .agent-col-buttons   { width: 150px; }
+
+    .agent-col { font-size: clamp(10px, 1.4vw, 13px); }
+    .toggle-btn { height: 36px; font-size: 14px; }
+}
+
+
+/* =====================================================
+   IPAD PORTRAIT  (481–1024 px + portrait)
+   Collapsed : identity (115) + status (75)
+               + 1 divider (11) + overhead (27) = 228 px
+   Expanded  : + telemetry (100) + buttons (140)
+               + 2 dividers (22)                = 490 px (cap 96vw)
+   ===================================================== */
+@media (min-width: 481px) and (max-width: 1024px) and (orientation: portrait) {
+    #agents-bar.collapsed { width: 228px; }
+    #agents-bar.expanded  { width: min(490px, 96vw); }
+
+    #agents-bar.collapsed .agent-col-telemetry,
+    #agents-bar.collapsed .agent-col-buttons,
+    #agents-bar.collapsed .agent-div-before-telemetry,
+    #agents-bar.collapsed .agent-div-before-buttons { display: none !important; }
+
+    .agent-col-identity  { width: 115px; }
+    .agent-col-status    { width:  75px; }
+    .agent-col-telemetry { width: 100px; }
+    .agent-col-buttons   { width: 140px; }
+
+    .agent-col { font-size: clamp(10px, 1.8vw, 13px); }
+    .toggle-btn { height: 38px; }
+}
+
+
+/* =====================================================
+   PHONE LANDSCAPE  (≤ 767 px + landscape)
+   Collapsed : identity (105) + status (68)
+               + 1 divider (11) + overhead (27) = 211 px
+   Expanded  : + telemetry (95) + buttons (130)
+               + 2 dividers (22)                = 458 px (cap 90vw)
+   ===================================================== */
+@media (max-width: 767px) and (orientation: landscape) {
+    #agents-bar.collapsed { width: 211px; }
+    #agents-bar.expanded  { width: min(458px, 90vw); max-width: 90vw; }
+
+    #agents-bar.collapsed .agent-col-telemetry,
+    #agents-bar.collapsed .agent-col-buttons,
+    #agents-bar.collapsed .agent-div-before-telemetry,
+    #agents-bar.collapsed .agent-div-before-buttons { display: none !important; }
+
+    .agent-col-identity  { width: 105px; }
+    .agent-col-status    { width:  68px; }
+    .agent-col-telemetry { width:  95px; }
+    .agent-col-buttons   { width: 130px; }
+
+    .agent-col { font-size: clamp(9px, 2vw, 12px); }
+    .toggle-btn { height: 32px; font-size: 13px; }
+    .agent-div { margin: 0 3px; }
+}
+
+
+/* =====================================================
+   PHONE PORTRAIT  (≤ 480 px + portrait)
+   Dividers use 2px margin → 5px each (instead of 11px)
+   Collapsed : identity (88) + overhead (27) = 115 px
+   Expanded  : identity (88) + status (60) + telemetry (82)
+               + buttons (100) + 3 dividers (15) + overhead (27) = 372 px (cap 98vw)
+
+   Buttons reconfigure to 2-col × 3-row (34 px per row).
+   The row height grows to fit — override the JS-computed fixed height.
+   ===================================================== */
+@media (max-width: 480px) and (orientation: portrait) {
+    #agents-bar.collapsed { width: 115px; }
+    #agents-bar.expanded  { width: min(372px, 98vw); max-width: 98vw; }
+
+    #agents-bar.collapsed .agent-col-status,
+    #agents-bar.collapsed .agent-col-telemetry,
+    #agents-bar.collapsed .agent-col-buttons,
+    #agents-bar.collapsed .agent-div-before-status,
+    #agents-bar.collapsed .agent-div-before-telemetry,
+    #agents-bar.collapsed .agent-div-before-buttons { display: none !important; }
+
+    .agent-col-identity  { width:  88px; }
+    .agent-col-status    { width:  60px; }
+    .agent-col-telemetry { width:  82px; }
+
+    /* Button column: auto height so it sizes to the 3-row grid content */
+    .agent-col-buttons   { width: 100px; height: auto !important; }
+
+    .agent-col { font-size: clamp(8px, 2.8vw, 11px); }
+    .toggle-btn { height: 28px; font-size: 12px; }
+    .agent-div  { margin: 0 2px; }
+
+    /* Row grows to accommodate 3 button rows; !important beats the JS inline height */
+    [id*="agent-row-style"] { height: auto !important; }
+
+    /* 2 cols × 3 rows, explicit 34 px row height.
+       All three !important flags beat the Python inline gridTemplate* and flex:1 styles. */
+    .agent-btn-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+        grid-template-rows: repeat(3, 34px) !important;
+        flex: none !important;   /* stop the grid trying to fill an undefined parent height */
+        height: auto !important;
+    }
+}

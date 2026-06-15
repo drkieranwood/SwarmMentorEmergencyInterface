@@ -1,0 +1,10 @@
+{
+    "lat": 64.575257,
+    "lon": -149.419418,
+    "alt": 50,
+    "radius": 100,
+    "offset": 20,
+	"tgtalt": 20,
+	"rtlalt": 20,
+	"rspeed": 20
+}
