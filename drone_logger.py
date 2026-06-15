@@ -1,3 +1,4 @@
+import os
 import threading
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -38,6 +39,7 @@ class ULogWriter(DroneLogger):
     """
 
     def __init__(self, filepath):
+        self._filepath = filepath
         self._f = open(filepath, 'w', encoding='utf-8', buffering=1)  # line-buffered
         self._lock = threading.Lock()
         self._f.write(f"# FlightBoard log started {datetime.now().isoformat()}\n")
@@ -78,6 +80,12 @@ class ULogWriter(DroneLogger):
         line += '\n'
         with self._lock:
             self._f.write(line)
+
+    def size_mb(self):
+        try:
+            return os.path.getsize(self._filepath) / (1024 * 1024)
+        except OSError:
+            return 0.0
 
     def close(self):
         with self._lock:

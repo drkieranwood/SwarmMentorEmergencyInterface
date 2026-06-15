@@ -668,7 +668,10 @@ def serve_tiles(path):
 
 
 app.layout = html.Div([
-    html.H1("FlightBoard Dashboard", className='dashboard-title'),
+    html.Div([
+        html.H1("FlightBoard Dashboard", className='dashboard-title'),
+        html.Span("0.00 MB", id='log-size-counter', className='log-size-counter'),
+    ], className='title-bar'),
     html.Div(id="button-output"),
     html.Div([
         html.Button("ACTIVATE ALL", id="activate-all-btn", n_clicks=0, className='btn-global btn-activate-all'),
@@ -749,6 +752,14 @@ app.layout = html.Div([
 # -----------------------------
 # Callbacks
 # -----------------------------
+@app.callback(
+    Output('log-size-counter', 'children'),
+    Input('interval-agents', 'n_intervals'),
+)
+def update_log_size(_n):
+    return f"{ulog.size_mb():.2f} MB"
+
+
 @app.callback(
     Output('activated-drones', 'data'),
     Input({'type': 'drone-activate-btn', 'index': ALL}, 'n_clicks'),
@@ -945,25 +956,12 @@ def update_map_markers(n):
     markers = []
     with receiver.lock:
         for drone_id in receiver.agents.keys():
-            gps = receiver.gps_data.get(drone_id, (0, 0, 0))
-            lat, lon, _alt = gps
-            if lat != 0 and lon != 0:
-                name = receiver.name_by_id.get(drone_id, str(drone_id))
-                icon_url = f"/assets/blueNumberMarkers/number_{drone_id}.png"
-                markers.append(
-                    dl.Marker(
-                        position=[lat, lon],
-                        children=dl.Tooltip(f"Drone {name}: Alt: {_alt:.1f}m, Yaw: {receiver.heading.get(drone_id, 0.0):.1f}°"),
-                        icon={"iconUrl": icon_url, "iconSize": [48,48], "iconAnchor": [24, 48]},
-                        zIndexOffset=1000
-                    )
-                )
-                size = 120
-                blue_arrow_icon_url = get_blue_arrow_icon_url(receiver.heading[drone_id])
-                anchor_x, anchor_y = compute_arrow_anchor((size, size), receiver.heading[drone_id])
-                markers.append(
-                    dl.Marker(position=[lat,lon], icon={"iconUrl": blue_arrow_icon_url, "iconSize": [size, size], "iconAnchor": [anchor_x, anchor_y]}, zIndexOffset=999)
-                )
+            lat, lon, alt = receiver.gps_data.get(drone_id, (0, 0, 0))
+            if lat == 0 and lon == 0:
+                continue
+            name = receiver.name_by_id.get(drone_id, str(drone_id))
+            heading = receiver.heading.get(drone_id, 0.0)
+            markers.extend(_drone_map_markers(name, lat, lon, alt, heading))
     return markers
 
 
@@ -985,18 +983,29 @@ def update_rtl_target_markers(n):
     return markers
 
 
-def compute_arrow_anchor(image_size_px, rotation_deg):
-    w, h = image_size_px
-    cx, cy = w / 2, h / 2
-    base_x, base_y = cx, h
-    rel_x, rel_y = base_x - cx, base_y - cy
-    theta = math.radians(-rotation_deg)
-    new_y = rel_y * math.cos(theta)
-    new_x = rel_y * math.sin(theta)
-    return [round(cx + new_x, 1), round(cy + new_y, 1)]
-
-def get_blue_arrow_icon_url(heading_deg: float) -> str:
-    return f"/assets/bluearrow_rotated/bluearrow_{int(round(heading_deg)) % 360:03d}.png"
+def _drone_map_markers(name, lat, lon, alt, heading):
+    """Return [arrow_marker, label_marker] for a single drone using DivIcon."""
+    arrow_html = (
+        f'<div style="width:48px;height:48px;transform:rotate({heading:.0f}deg)">'
+        f'<svg viewBox="0 0 48 48" width="48" height="48" xmlns="http://www.w3.org/2000/svg">'
+        f'<polygon points="24,3 41,45 24,35 7,45" fill="#1E88E5" stroke="#0D47A1" stroke-width="2"/>'
+        f'</svg></div>'
+    )
+    label_html = f'<div class="drone-map-label">{name}</div>'
+    tooltip = dl.Tooltip(f"Drone {name}: Alt: {alt:.1f}m, Hdg: {heading:.1f}°")
+    return [
+        dl.Marker(
+            position=[lat, lon],
+            icon=dl.DivIcon(html=arrow_html, iconSize=[48, 48], iconAnchor=[24, 24], className=''),
+            zIndexOffset=999,
+        ),
+        dl.Marker(
+            position=[lat, lon],
+            icon=dl.DivIcon(html=label_html, iconSize=[32, 32], iconAnchor=[16, 16], className=''),
+            children=tooltip,
+            zIndexOffset=1000,
+        ),
+    ]
 
 def generate_circular_targets(center_lat, center_lon, alt, radius_m, offset_deg, tgt_alt, num_targets):
     targets = []

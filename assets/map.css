@@ -64,3 +64,22 @@
     font-size: 14px;
     box-sizing: border-box;
 }
+
+
+/* Drone map markers — DivIcon-based, no pre-rendered PNGs needed */
+.drone-map-label {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: #1E88E5;
+    color: #fff;
+    font-weight: bold;
+    font-size: 11px;
+    font-family: monospace;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid #0D47A1;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.35);
+    white-space: nowrap;
+}
