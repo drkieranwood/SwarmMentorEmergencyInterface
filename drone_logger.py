@@ -1,7 +1,7 @@
 import os
 import threading
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class DroneLogger(ABC):
@@ -42,17 +42,18 @@ class ULogWriter(DroneLogger):
         self._filepath = filepath
         self._f = open(filepath, 'w', encoding='utf-8', buffering=1)  # line-buffered
         self._lock = threading.Lock()
-        self._f.write(f"# FlightBoard log started {datetime.now().isoformat()}\n")
+        self._f.write(f"# FlightBoard log started {datetime.now(timezone.utc).isoformat()}\n")
         self._f.write("# TELEM: timestamp id lat lon alt heading [batt] [armed] [airborne]\n")
         self._f.write("# EVENT: timestamp id event=CONNECT|DISCONNECT\n")
         self._f.write("# CMD:   timestamp id action [detail...]\n")
         print(f"[LOG] Logging to {filepath}")
 
     def _ts(self):
-        return datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f')
+        return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f') + 'Z'
 
     def log_telemetry(self, drone_id, lat, lon, alt, heading,
-                      batt_pct=None, armed=None, airborne=None):
+                      batt_pct=None, armed=None, airborne=None,
+                      speed_mps=None, mode=None):
         line = (
             f"{self._ts()} TELEM"
             f" id={drone_id}"
@@ -61,6 +62,10 @@ class ULogWriter(DroneLogger):
         )
         if batt_pct is not None:
             line += f" batt={batt_pct:.1f}"
+        if speed_mps is not None:
+            line += f" spd={speed_mps:.2f}"
+        if mode is not None:
+            line += f" mode={mode}"
         if armed is not None:
             line += f" armed={int(bool(armed))}"
         if airborne is not None:

@@ -15,7 +15,7 @@ import subprocess as sp
 import threading
 import requests
 import dash_leaflet as dl
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import send_from_directory
 
 import dash
@@ -198,7 +198,7 @@ class DJIInterface:
 
                             with self._telemetry_lock:
                                 self._telemetry = telemetry
-                                self._telemetry["timestamp"] = datetime.now().strftime("%Y-%m-%d_%H-%M-%S.%f")
+                                self._telemetry["timestamp"] = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S.%f") + "Z"
                                 self.last_seen = time.time()
                                 self.connected = True
                                 self.retrying = False
@@ -389,6 +389,7 @@ class DroneFleetManager:
         self.retrying = {}
         self.targets = {}
         self.rtltargets = {}
+        self.speed_mps = {}
 
         self._running = True
         self._load_and_spawn()
@@ -463,6 +464,10 @@ class DroneFleetManager:
                 flight_mode = telemetry.get("flightMode", snapshot.get("flight_mode", "UNKNOWN"))
                 manual_override = telemetry.get("isManualOverrideActive", False)
 
+                speed_raw = telemetry.get("speed", {})
+                speed = math.hypot(float(speed_raw.get("x", 0.0)), float(speed_raw.get("y", 0.0))) if isinstance(speed_raw, dict) else 0.0
+                self.speed_mps[drone_id] = speed
+
                 self.gps_data[drone_id] = (lat, lon, alt)
                 self.batt_pct[drone_id] = battery
                 self.heading[drone_id] = heading
@@ -488,6 +493,8 @@ class DroneFleetManager:
                         drone_id=drone_id, lat=lat, lon=lon, alt=alt,
                         heading=heading,
                         batt_pct=float(battery) if isinstance(battery, (int, float)) else 0.0,
+                        speed_mps=self.speed_mps.get(drone_id),
+                        mode=flight_mode,
                         armed=not manual_override,
                         airborne=alt > 0.5,
                     )
@@ -535,7 +542,7 @@ class DroneFleetManager:
 # -----------------------------
 # Shared styles & Fleet Init
 # -----------------------------
-ulog = ULogWriter('logs/' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.log')
+ulog = ULogWriter('logs/' + datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%SZ') + '.log')
 receiver = DroneFleetManager(drone_list_path=DRONE_LIST_FILE)
 
 with open("assets/defaults.json", "r") as f:
@@ -590,7 +597,7 @@ def status_square(is_on, label):
 def status_indicator(is_on, label):
     return html.Div([status_square(is_on, label), html.Span(label, className='status-label')], className='status-indicator')
 
-def create_agent_bar(agent_id, ip, name, online, retrying, last_seen, gps, batt, mode, last_error):
+def create_agent_bar(agent_id, ip, name, online, retrying, last_seen, gps, batt, mode, last_error, speed=0.0):
     status_text = 'ONLINE' if online else 'OFFLINE'
     age_text = 'fresh' if not last_seen else f"{time.time() - last_seen:.1f}s ago"
 
@@ -628,7 +635,8 @@ def create_agent_bar(agent_id, ip, name, online, retrying, last_seen, gps, batt,
                 html.Div(f"Batt: {batt:.1f}%" if isinstance(batt, (int, float)) else f"Batt: {batt}", id={'type': 'agent-batt-txt', 'index': agent_id}, className='drone-telem'),
                 html.Div(f"Lat: {gps[0]:.6f}", id={'type': 'agent-lat-txt', 'index': agent_id}, className='drone-telem'),
                 html.Div(f"Lon: {gps[1]:.6f}", id={'type': 'agent-lon-txt', 'index': agent_id}, className='drone-telem'),
-                html.Div(f"Alt: {gps[2]:.1f}", id={'type': 'agent-alt-txt', 'index': agent_id}, className='drone-telem')
+                html.Div(f"Alt: {gps[2]:.1f}", id={'type': 'agent-alt-txt', 'index': agent_id}, className='drone-telem'),
+                html.Div(f"Spd: {speed:.1f} m/s", id={'type': 'agent-spd-txt', 'index': agent_id}, className='drone-telem')
             ], className='agent-col agent-col-telemetry'),
             vertical_divider('agent-div-before-buttons'),
             html.Div(
@@ -704,11 +712,28 @@ app.layout = html.Div([
                 maxZoom=22,
                 doubleClickZoom=False,
                 children=[
-                    dl.TileLayer(id='tile-layer', url=f"/tiles/{default_tile_folder}/{{z}}/{{x}}/{{y}}.jpg", tms=False, noWrap=True, minZoom=1, maxZoom=22),
+                    dl.TileLayer(id='tile-layer', url=f"/tiles/{default_tile_folder}/{{z}}/{{x}}/{{y}}.jpg", tms=False, noWrap=True, minZoom=1, maxZoom=22, maxNativeZoom=17),
                     dl.LayerGroup(id='layer-rtl-targets'),
                     dl.LayerGroup(id='layer-targets'),
                     dl.LayerGroup(id='map-markers'),
                     dl.LayerGroup(id='layer-custom'),
+                    html.Div(
+                        id='zoom-indicator',
+                        style={
+                            'position': 'absolute',
+                            'bottom': '30px',
+                            'right': '10px',
+                            'zIndex': '1000',
+                            'background': 'rgba(0,0,0,0.55)',
+                            'color': '#fff',
+                            'padding': '3px 8px',
+                            'borderRadius': '4px',
+                            'fontSize': '11px',
+                            'fontFamily': 'monospace',
+                            'pointerEvents': 'none',
+                        },
+                        children='Z: —'
+                    ),
                 ],
             ),
             html.Div(children=[
@@ -895,6 +920,20 @@ def center_map_on_agents(n_clicks):
     }
 
 @app.callback(
+    Output('zoom-indicator', 'children'),
+    Input('agent-map', 'zoom'),
+)
+def update_zoom_indicator(zoom):
+    if zoom is None:
+        return 'Z: —'
+    z = int(zoom)
+    native = min(z, 17)
+    if z > 17:
+        return f'Z: {z}  (tiles: {native} ×{2 ** (z - 17)})'
+    return f'Z: {z}'
+
+
+@app.callback(
     Output('tile-layer', 'url'),
     Input('tile-folder-dropdown', 'value'),
     prevent_initial_call=True
@@ -917,6 +956,7 @@ def update_tile_folder(folder):
     Output({'type': 'agent-lat-txt', 'index': ALL}, 'children'),
     Output({'type': 'agent-lon-txt', 'index': ALL}, 'children'),
     Output({'type': 'agent-alt-txt', 'index': ALL}, 'children'),
+    Output({'type': 'agent-spd-txt', 'index': ALL}, 'children'),
     Output({'type': 'agent-airborne-dot', 'index': ALL}, 'className'),
     Input('interval-agents', 'n_intervals'),
     State({'type': 'agent-state-txt', 'index': ALL}, 'id'),
@@ -925,7 +965,7 @@ def update_tile_folder(folder):
 def update_dashboard(n, dynamic_ids, activated_drones):
     activated_set = set(activated_drones or [])
     row_classes = []
-    states, ages, modes, batts, lats, lons, alts, airborne_dots = [], [], [], [], [], [], [], []
+    states, ages, modes, batts, lats, lons, alts, speeds, airborne_dots = [], [], [], [], [], [], [], [], []
 
     with receiver.lock:
         for idx_dict in dynamic_ids:
@@ -962,11 +1002,13 @@ def update_dashboard(n, dynamic_ids, activated_drones):
             lats.append(f"Lat: {gps[0]:.6f}")
             lons.append(f"Lon: {gps[1]:.6f}")
             alts.append(f"Alt: {gps[2]:.1f}")
+            spd = receiver.speed_mps.get(drone_id, 0.0)
+            speeds.append(f"Spd: {spd:.1f} m/s")
 
             airborne = gps[2] > 2.0
             airborne_dots.append('status-dot airborne' if airborne else 'status-dot grounded')
 
-    return row_classes, states, ages, modes, batts, lats, lons, alts, airborne_dots
+    return row_classes, states, ages, modes, batts, lats, lons, alts, speeds, airborne_dots
 
 
 @app.callback(

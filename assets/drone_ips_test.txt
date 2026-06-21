@@ -1,2 +1,5 @@
 # Test configuration — points at the local simulator (test_drone_sim.py)
-127.0.0.1, Sim
+# Each drone uses a different loopback IP so commands route to the right one
+127.0.0.1, Sim1
+127.0.0.2, Sim2
+127.0.0.3, Sim3
